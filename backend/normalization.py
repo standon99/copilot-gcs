@@ -17,6 +17,11 @@ SCALES = {
         "vz": ("velocity_down_m_s", 0.01),
         "hdg": ("heading_deg", 0.01),
     },
+    "POSITION_TARGET_GLOBAL_INT": {
+        "lat_int": ("latitude_deg", 1e-7),
+        "lon_int": ("longitude_deg", 1e-7),
+        "alt": ("altitude_in_coordinate_frame_m", 1),
+    },
     "HOME_POSITION": {
         "latitude": ("latitude_deg", 1e-7),
         "longitude": ("longitude_deg", 1e-7),
@@ -44,6 +49,8 @@ SCALES = {
         "throttle": ("throttle_percent", 1),
     },
     "NAV_CONTROLLER_OUTPUT": {
+        "nav_bearing": ("navigation_bearing_deg", 1),
+        "target_bearing": ("target_bearing_deg", 1),
         "nav_roll": ("desired_roll_deg", 1),
         "nav_pitch": ("desired_pitch_deg", 1),
         "alt_error": ("altitude_error_m", 1),

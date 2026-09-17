@@ -8,9 +8,14 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import API_KEY, BASE_URL, INFERENCE_TIMEOUT, MODEL, MONITOR_INTERVAL, RUNTIME
-from .prompts import INTENT_SYSTEM, MONITOR_SYSTEM, PLANNER_SYSTEM
+from .prompts import INTENT_SYSTEM, INTERACTION_SYSTEM, MONITOR_SYSTEM, PLANNER_SYSTEM
 
-DEFAULT_PROMPTS = {"monitor": MONITOR_SYSTEM, "planner": PLANNER_SYSTEM, "intent": INTENT_SYSTEM}
+DEFAULT_PROMPTS = {
+    "monitor": MONITOR_SYSTEM,
+    "planner": PLANNER_SYSTEM,
+    "intent": INTENT_SYSTEM,
+    "interaction": INTERACTION_SYSTEM,
+}
 
 
 def normalize_endpoint(value):
@@ -53,6 +58,7 @@ class Prompts(BaseModel):
     monitor: str = Field(default=MONITOR_SYSTEM, min_length=20, max_length=24000)
     planner: str = Field(default=PLANNER_SYSTEM, min_length=20, max_length=24000)
     intent: str = Field(default=INTENT_SYSTEM, min_length=20, max_length=24000)
+    interaction: str = Field(default=INTERACTION_SYSTEM, min_length=20, max_length=24000)
 
 
 class Preferences(BaseModel):

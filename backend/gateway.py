@@ -467,6 +467,9 @@ class Gateway:
                     self.link.mav.command_long_send(
                         self.sys, self.comp, 512, 0, 242, 0, 0, 0, 0, 0, 0
                     )
+                    self.link.mav.command_long_send(
+                        self.sys, self.comp, 511, 0, 87, 250000, 0, 0, 0, 0, 0
+                    )
                     self.link.mav.param_request_list_send(self.sys, self.comp)
                 try:
                     request = self.commands.get_nowait()

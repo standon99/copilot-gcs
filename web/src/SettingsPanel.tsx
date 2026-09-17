@@ -223,6 +223,7 @@ export function SettingsPanel({
             <option value="monitor">Continuous assessment</option>
             <option value="planner">Mission planning & review</option>
             <option value="intent">Mission statement interpretation</option>
+            <option value="interaction">Multi-vehicle interaction</option>
           </select>
         </label>
         <p>

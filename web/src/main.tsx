@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { api } from "./api";
 import { SettingsPanel } from "./SettingsPanel";
+import { AttitudeIndicator } from "./AttitudeIndicator";
 import { FencePanel } from "./FencePanel";
 import { registerGroundStationTools } from "./webmcp";
 import * as maplibregl from "maplibre-gl";
@@ -86,6 +87,7 @@ function MapView({
     map = useRef<maplibregl.Map>(null),
     markers = useRef<maplibregl.Marker[]>([]),
     vehicleMarkers = useRef<Record<string, maplibregl.Marker>>({}),
+    cueMarkers = useRef<Record<string, maplibregl.Marker>>({}),
     centered = useRef(false);
   const props = useRef<Json>({});
   props.current = {
@@ -194,6 +196,28 @@ function MapView({
           "line-dasharray": [2, 1],
         },
       });
+      m.addSource("navigation-cue", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addLayer({
+        id: "navigation-stick",
+        type: "line",
+        source: "navigation-cue",
+        filter: ["==", ["get", "kind"], "target"],
+        paint: {
+          "line-color": "#fff0ad",
+          "line-width": 3,
+          "line-dasharray": [4, 2],
+        },
+      });
+      m.addLayer({
+        id: "navigation-carrot",
+        type: "line",
+        source: "navigation-cue",
+        filter: ["==", ["get", "kind"], "carrot"],
+        paint: { "line-color": "#ff9b54", "line-width": 4 },
+      });
       renderMap.current();
     });
     return () => {
@@ -201,6 +225,7 @@ function MapView({
       Object.values(vehicleMarkers.current).forEach((marker) =>
         marker.remove(),
       );
+      Object.values(cueMarkers.current).forEach((marker) => marker.remove());
       resizeObserver.disconnect();
       m.remove();
     };
@@ -318,6 +343,41 @@ function MapView({
   const updateVehicle = () => {
     const m = map.current;
     if (!m?.getSource("route")) return;
+    const cue = historical ? null : vehicle?.navigation_cue;
+    const cueFeatures: any[] = [];
+    for (const kind of ["target", "carrot"]) {
+      const point = cue?.[kind];
+      if (!point || !validPosition(vehicle?.position)) {
+        cueMarkers.current[kind]?.remove();
+        delete cueMarkers.current[kind];
+        continue;
+      }
+      cueFeatures.push({
+        type: "Feature",
+        properties: { kind },
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [vehicle.position.lon, vehicle.position.lat],
+            [point.lon, point.lat],
+          ],
+        },
+      });
+      if (!cueMarkers.current[kind]) {
+        const element = document.createElement("div");
+        element.className = `navigation-pin ${kind}`;
+        element.textContent = kind === "target" ? "⊕" : "◆";
+        cueMarkers.current[kind] = new maplibregl.Marker({ element })
+          .setLngLat([point.lon, point.lat])
+          .addTo(m);
+      }
+      cueMarkers.current[kind].setLngLat([point.lon, point.lat]);
+      cueMarkers.current[kind].getElement().title = point.source;
+    }
+    (m.getSource("navigation-cue") as maplibregl.GeoJSONSource)?.setData({
+      type: "FeatureCollection",
+      features: cueFeatures,
+    });
     const ids = new Set<string>();
     for (const v of visibleVehicles) {
       if (!validPosition(v.position)) continue;
@@ -370,7 +430,10 @@ function MapView({
       centered.current = true;
     }
   };
-  renderMap.current = updateMap;
+  renderMap.current = () => {
+    updateMap();
+    updateVehicle();
+  };
   useEffect(updateMap, [
     draft,
     active,
@@ -451,6 +514,24 @@ function MapView({
             : ""}
         </div>
       )}
+      {!historical && vehicle?.navigation_cue && (
+        <div className="navigation-legend">
+          {vehicle.navigation_cue.target && (
+            <span>⊕ {vehicle.navigation_cue.target.source}</span>
+          )}
+          {vehicle.navigation_cue.carrot && (
+            <span className="carrot-label">
+              ◆ Projected nav bearing ·{" "}
+              {fmt(vehicle.navigation_cue.carrot.bearing, 0)}°
+            </span>
+          )}
+          {vehicle.navigation_cue.wp_distance != null && (
+            <span>
+              WP distance {fmt(vehicle.navigation_cue.wp_distance, 0)} m
+            </span>
+          )}
+        </div>
+      )}
       <div className="map-note">
         {editing
           ? "Drag a waypoint to revise the draft."
@@ -477,6 +558,8 @@ function App() {
     [staged, setStaged] = useState<Json>({});
   const [chat, setChat] = useState(""),
     [editAuthorized, setEditAuthorized] = useState(false),
+    [interactionMode, setInteractionMode] = useState(false),
+    [interactionTargets, setInteractionTargets] = useState<string[]>([]),
     [launchProfile, setLaunchProfile] = useState("copter"),
     [launchCount, setLaunchCount] = useState(1),
     [chatBusy, setChatBusy] = useState(false);
@@ -728,17 +811,38 @@ function App() {
     }, "review");
   const sendChat = () => {
     if (!chat.trim() || chatBusy) return;
+    if (
+      interactionMode &&
+      !interactionTargets.some((id) => vehicles.some((v) => v.id === id))
+    ) {
+      setError("Select at least one interaction target.");
+      return;
+    }
     const text = chat;
+    const targets = interactionTargets.filter((id) =>
+      vehicles.some((v) => v.id === id),
+    );
+    const responseVehicle =
+      interactionMode && !targets.includes(vid) ? targets[0] : vid;
+    if (responseVehicle !== vid) setVid(responseVehicle);
     setChat("");
     setChatBusy(true);
     guard(async () => {
-      await api(`/vehicles/${vid}/chat`, "POST", {
-        message: text,
-        edit_authorized: editAuthorized,
-      });
-      await refresh();
+      if (interactionMode) {
+        const result = await api("/interaction", "POST", {
+          message: text,
+          enabled: true,
+          targets,
+        });
+        result.workspaces.forEach(setWork);
+      } else
+        await api(`/vehicles/${vid}/chat`, "POST", {
+          message: text,
+          edit_authorized: editAuthorized,
+        });
+      await refresh(responseVehicle);
     }).finally(() => {
-      void guard(() => refresh());
+      void guard(() => refresh(selectedVehicleRef.current));
       setChatBusy(false);
     });
   };
@@ -891,6 +995,60 @@ function App() {
               </button>
             </div>
           </div>
+          <div
+            className={"interaction-bar" + (interactionMode ? " enabled" : "")}
+          >
+            <button
+              role="switch"
+              aria-checked={interactionMode}
+              aria-label="LLM interaction mode"
+              disabled={chatBusy}
+              onClick={() => {
+                const enabled = !interactionMode;
+                setInteractionMode(enabled);
+                if (enabled) setInteractionTargets(vid ? [vid] : []);
+              }}
+            >
+              <span className="switch-track">
+                <span />
+              </span>{" "}
+              LLM interaction mode{" "}
+              <strong>{interactionMode ? "ON" : "OFF"}</strong>
+            </button>
+            {interactionMode ? (
+              <>
+                <span>Allowed targets:</span>
+                <div className="interaction-targets">
+                  {vehicles.map((v) => (
+                    <label key={v.id}>
+                      <input
+                        type="checkbox"
+                        disabled={chatBusy}
+                        checked={interactionTargets.includes(v.id)}
+                        onChange={(e) =>
+                          setInteractionTargets((ids) =>
+                            e.target.checked
+                              ? [...ids, v.id]
+                              : ids.filter((id) => id !== v.id),
+                          )
+                        }
+                      />
+                      {v.profile} {v.id.slice(0, 6)}
+                    </label>
+                  ))}
+                </div>
+                <small>
+                  Draft edits + parameter proposals · upload and Apply stay
+                  manual
+                </small>
+              </>
+            ) : (
+              <small>
+                Enable to request changes for selected vehicles in the copilot
+                chat.
+              </small>
+            )}
+          </div>
           {error && (
             <div className="banner error">
               <AlertTriangle size={17} />
@@ -991,8 +1149,7 @@ function App() {
               </h1>
               <p>
                 Launch a simulator to build a mission, inspect live vehicle
-                data, and test a read-only AI copilot against real ArduPilot
-                behavior.
+                data, and test an AI copilot against real ArduPilot behavior.
               </p>
               <div className="welcome-cards">
                 {Object.keys(config.profiles).map((p) => (
@@ -1049,6 +1206,7 @@ function App() {
                     />
                     {tab === "flight" ? (
                       <div className="flight-bottom">
+                        <AttitudeIndicator vehicle={current} />
                         <div className="section-title">
                           <h2>Vehicle controls</h2>
                           <span>
@@ -2447,6 +2605,86 @@ function App() {
                       </div>
                     </div>
                   )}
+                  {work?.parameter_proposals
+                    ?.slice()
+                    .reverse()
+                    .map((p: Json) => (
+                      <div className="parameter-proposal" key={p.id}>
+                        <strong>
+                          Parameter proposal · {current.profile}{" "}
+                          {vid.slice(0, 6)}
+                        </strong>
+                        <span className="proposal-status">
+                          {p.status.toUpperCase()}
+                        </span>
+                        {p.parameters.map((x: Json) => (
+                          <div key={x.name}>
+                            <code>{x.name}</code>
+                            <b>
+                              {fmt(x.expected, 3)} → {fmt(x.value, 3)}
+                            </b>
+                            <p>{x.reason}</p>
+                          </div>
+                        ))}
+                        {p.error && <p className="red">{p.error}</p>}
+                        {p.results?.map((r: Json) => (
+                          <small key={r.job_id}>
+                            {r.name}:{" "}
+                            {r.result?.status || "Inspect job " + r.job_id}
+                          </small>
+                        ))}
+                        {p.status === "pending" && (
+                          <>
+                            <small>
+                              Expires {clock(p.expires_at)} · writes require a
+                              disarmed owned simulator and control.
+                            </small>
+                            <div className="proposal-actions">
+                              <button
+                                className="primary"
+                                disabled={
+                                  !control ||
+                                  current.armed ||
+                                  !!busy ||
+                                  !current.owned ||
+                                  p.expires_at < Date.now() / 1000
+                                }
+                                onClick={() =>
+                                  guard(async () => {
+                                    setWork(
+                                      await api(
+                                        `/vehicles/${vid}/parameter-proposals/${p.id}/apply`,
+                                        "POST",
+                                        {},
+                                      ),
+                                    );
+                                    await refresh();
+                                  }, "parameters")
+                                }
+                              >
+                                Apply to {vid.slice(0, 6)}
+                              </button>
+                              <button
+                                disabled={!!busy}
+                                onClick={() =>
+                                  guard(async () =>
+                                    setWork(
+                                      await api(
+                                        `/vehicles/${vid}/parameter-proposals/${p.id}/discard`,
+                                        "POST",
+                                        {},
+                                      ),
+                                    ),
+                                  )
+                                }
+                              >
+                                Discard
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   {chatBusy && (
                     <div className="thinking">
                       <span className="dot" />
@@ -2456,23 +2694,36 @@ function App() {
                   <div ref={chatBottom} />
                 </div>
                 <div className="chat-compose">
-                  <label className="edit-toggle">
-                    <input
-                      type="checkbox"
-                      checked={editAuthorized}
-                      onChange={(e) => setEditAuthorized(e.target.checked)}
-                    />
-                    Allow requested draft edits{" "}
-                    <span>
-                      {editAuthorized ? "DRAFT EDITOR" : "REVIEW ONLY"}
-                    </span>
-                  </label>
+                  {!interactionMode && (
+                    <label className="edit-toggle">
+                      <input
+                        type="checkbox"
+                        checked={editAuthorized}
+                        onChange={(e) => setEditAuthorized(e.target.checked)}
+                      />
+                      Allow requested draft edits{" "}
+                      <span>
+                        {editAuthorized ? "DRAFT EDITOR" : "REVIEW ONLY"}
+                      </span>
+                    </label>
+                  )}
+                  {interactionMode && (
+                    <div className="interaction-context">
+                      Editing targets:{" "}
+                      {vehicles
+                        .filter((v) => interactionTargets.includes(v.id))
+                        .map((v) => `${v.profile} ${v.id.slice(0, 6)}`)
+                        .join(", ") || "select a target above"}
+                    </div>
+                  )}
                   <div className="compose-box">
                     <textarea
                       placeholder={
-                        editAuthorized
-                          ? "Describe a route or request a draft change…"
-                          : "Ask about telemetry or review this mission…"
+                        interactionMode
+                          ? "Tell me which vehicle, waypoint or parameter to change…"
+                          : editAuthorized
+                            ? "Describe a route or request a draft change…"
+                            : "Ask about telemetry or review this mission…"
                       }
                       value={chat}
                       onChange={(e) => setChat(e.target.value)}
@@ -2492,7 +2743,11 @@ function App() {
                     </button>
                   </div>
                   <div className="chat-footer">
-                    <span>Local draft tools only</span>
+                    <span>
+                      {interactionMode
+                        ? "Draft edits + staged parameters"
+                        : "Local draft tools only"}
+                    </span>
                     <span>No vehicle control by AI</span>
                   </div>
                 </div>

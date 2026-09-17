@@ -1,5 +1,13 @@
 # Validation record
 
+## Interaction mode, flight cues and instruments
+
+The update passes **74 automated tests**, Python lint and the production TypeScript/Vite build. Tests cover all-target validation before mutations, unselected/repeated targets, session/revision races including untouched targets, profile-specific commands, supplied-parameter restrictions, integer/enum checks, expiry, armed/configuration conflicts, idempotent Apply and truthful partial-write failures. Navigation tests cover reported target precedence, coordinate masks, mission sequence offsets, stale/disarmed/manual suppression and geographic projection. Existing saved prompts retain custom content when the fourth interaction prompt is introduced.
+
+Two real Copter SITL sessions were exercised on temporary port 8091 while 8080 remained stopped. A real Ollama multi-target request created distinct drafts (20/30 m on the first, 35 m on the second) and staged LOG_DISARMED only for the first. Both onboard parameter values remained zero until the browser operator clicked Apply. Fresh readback then verified 1 on the first and 0 on the second. The initial model response mislabeled timed loiter as unlimited loiter; the prompt now spells out MAV_CMD names/numbers. A second real inference corrected the item to command 17 without altering the other vehicle. This demonstrates why structured edits remain inspectable; it is not evidence of general planning accuracy.
+
+The corrected mission passed reviewed upload/readback, GUIDED takeoff and AUTO execution. Fresh target telemetry matched the intended waypoint while the copter moved at 3.65 m/s with 20.36 m relative altitude. Chrome inspection during the same flight showed the map stick/cue and an approximately -27° pitch attitude at 9.9 m/s. See [interaction-flight-validation.json](interaction-flight-validation.json). The other copter remained disarmed. The final browser check verified the polished flight instrument, persisted fourth prompt setting, off-by-default interaction switch and suppression of navigation cues during LAND. The temporary test server and its owned simulators were stopped afterward; automatic monitoring remains paused with the saved five-minute interval.
+
 ## Settings, geofence and map follow-up
 
 The follow-up implementation passed **44 automated tests** and the production frontend build. New tests cover atomic settings persistence/revision conflicts, endpoint validation, cloud-key origin scoping, effective custom prompts/model selection, local inference and model discovery through the sandbox, denial of other loopback ports, and geofence datum/conflict handling.

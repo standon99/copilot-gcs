@@ -1,0 +1,40 @@
+{
+  "id": "aea502a8a2a0",
+  "mode": "AUTO",
+  "armed": true,
+  "position": {
+    "lat": -35.3632263,
+    "lon": 149.1652297,
+    "amsl": 604.43,
+    "relative": 20.358
+  },
+  "speed": 3.652250289916992,
+  "attitude": {
+    "mavpackettype": "ATTITUDE",
+    "time_boot_ms": 216391,
+    "roll": -0.00016165831766556948,
+    "pitch": -0.33375540375709534,
+    "yaw": 0.0025677059311419725,
+    "rollspeed": -0.010689787566661835,
+    "pitchspeed": -0.07402700185775757,
+    "yawspeed": 0.0011425951961427927
+  },
+  "navigation_cue": {
+    "target": {
+      "lat": -35.3623001,
+      "lon": 149.1652299,
+      "source": "Autopilot position target",
+      "age": 0.27
+    },
+    "carrot": {
+      "lat": -35.362776639197044,
+      "lon": 149.1652297,
+      "bearing": 0,
+      "length": 50,
+      "source": "Projected navigation bearing (5\u201350 m display cue)"
+    },
+    "mission_seq": 2,
+    "wp_distance": 103
+  },
+  "test": "Real owned Copter SITL; multi-vehicle LLM planning and operator-applied parameter proposal; no physical vehicle"
+}

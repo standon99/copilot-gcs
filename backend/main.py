@@ -2,6 +2,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import math
 import multiprocessing as mp
 import os
 import queue
@@ -21,8 +22,10 @@ from pydantic import BaseModel, Field
 from .config import HOME, PROFILES, ROOT, RUNTIME
 from .fence import FenceEdit, fence_changes, fence_snapshot
 from .gateway import gateway_main
+from .interaction import parameter_context, validate_edits
 from .lab import CATALOG, score
 from .metadata import FIRMWARE_COMMIT, metadata, validate_parameter
+from .navigation import navigation_cue
 from .planning import Draft, Intent, apply_patch, check, revise
 from .provider import Provider, sandbox_command
 from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
@@ -87,6 +90,8 @@ class Vehicle:
         self.predictions = []
         self.fault_restore = {}
         self.fence_busy = False
+        self.parameter_apply_busy = False
+        self.parameter_proposals = []
         self.trial = None
         self.trial_task = None
         self.closed = False
@@ -107,6 +112,7 @@ class Vehicle:
             "draft_revision": self.draft["revision"],
             "active_revision": self.active["revision"] if self.active else None,
             "fence": fence_snapshot(self.params),
+            "navigation_cue": navigation_cue(self.telemetry, self.active),
             "rules": self.telemetry.rules(self.active),
             "assessment": self.assessment,
             "assessment_stale": self.assessment is None
@@ -645,6 +651,7 @@ async def workspace(vid: str):
         "active": v.active,
         "chat": v.chat,
         "intent_proposal": v.intent_proposal,
+        "parameter_proposals": v.parameter_proposals,
         "checks": check(v.draft, v.profile, v.telemetry.snapshot()["home"]),
     }
 
@@ -754,8 +761,8 @@ async def action(vid: str, body: Action, request: Request):
     v = vehicle(vid)
     authorize(v, request)
     s = v.telemetry.snapshot()
-    if v.fence_busy and body.action in ("arm", "start", "takeoff"):
-        raise HTTPException(409, "Wait for the fence update to finish")
+    if (v.fence_busy or v.parameter_apply_busy) and body.action in ("arm", "start", "takeoff"):
+        raise HTTPException(409, "Wait for the configuration update to finish")
     if body.action not in (
         "arm",
         "mode",
@@ -815,6 +822,7 @@ async def write_fence(vid: str, body: FenceEdit, request: Request):
     if (
         v.telemetry.snapshot()["armed"]
         or v.fence_busy
+        or v.parameter_apply_busy
         or (v.trial_task and not v.trial_task.done())
     ):
         raise HTTPException(409, "Disarm and finish other fence/trial operations first")
@@ -867,6 +875,8 @@ class ParameterEdit(BaseModel):
 async def parameter_write(vid: str, body: ParameterEdit, request: Request):
     v = vehicle(vid)
     authorize(v, request)
+    if v.parameter_apply_busy:
+        raise HTTPException(409, "Wait for the parameter proposal to finish")
     if v.fence_busy and body.name.startswith("FENCE_"):
         raise HTTPException(409, "A fence update is in progress")
     if body.name.startswith("SIM_"):
@@ -889,6 +899,148 @@ async def job(jid: str):
     if jid not in jobs:
         raise HTTPException(404, "Unknown job")
     return public_job(jobs[jid])
+
+
+class Interaction(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    targets: list[str] = Field(min_length=1, max_length=6)
+    enabled: bool = False
+
+
+@app.post("/api/interaction")
+async def interaction(body: Interaction):
+    if not body.enabled or len(set(body.targets)) != len(body.targets):
+        raise HTTPException(422, "Enable interaction mode and select unique target vehicles")
+    snapshots = {}
+    for vid in body.targets:
+        v = vehicle(vid)
+        snapshots[vid] = {
+            "vehicle_id": vid,
+            "label": v.snapshot()["name"],
+            "profile": v.profile,
+            "epoch": v.telemetry.epoch,
+            "draft": copy.deepcopy(v.draft),
+            "parameters": parameter_context(v.profile, v.params, body.message),
+            "live_state": v.telemetry.snapshot(),
+            "supported_commands": PROFILES[v.profile]["commands"],
+            "previous_messages": copy.deepcopy(v.chat[-6:]),
+        }
+    try:
+        raw, meta = await provider.complete(
+            settings.value.prompts.interaction,
+            {"request": body.message, "selected_vehicles": list(snapshots.values())},
+        )
+        reply, prepared = validate_edits(raw, snapshots, vehicles)
+    except Exception as exc:
+        raise HTTPException(502, "No interaction changes applied: " + str(exc)[:300])
+    changes = {}
+    for edit in prepared:
+        v = edit["vehicle"]
+        if edit["draft"] is not None:
+            changes[v.id] = {
+                "before": snapshots[v.id]["draft"],
+                "after": edit["draft"],
+                "operations": edit["operations"],
+            }
+            save_draft(v, edit["draft"])
+        if edit["parameters"]:
+            proposal = {
+                "id": uuid.uuid4().hex,
+                "vehicle_id": v.id,
+                "epoch": v.telemetry.epoch,
+                "created_at": time.time(),
+                "expires_at": time.time() + 300,
+                "parameters": edit["parameters"],
+                "status": "pending",
+                "results": [],
+                "model": meta,
+            }
+            v.parameter_proposals.append(proposal)
+            v.parameter_proposals = v.parameter_proposals[-30:]
+            event(v.id, "parameters_proposed", proposal)
+    for vid in body.targets:
+        v = vehicle(vid)
+        v.chat.append(
+            {"role": "user", "text": body.message, "ts": time.time(), "targets": body.targets}
+        )
+        entry = {
+            "role": "assistant",
+            "text": reply,
+            "ts": time.time(),
+            "change": changes.get(vid),
+            "model": meta,
+        }
+        v.chat.append(entry)
+        event(vid, "interaction", entry)
+    return {"reply": reply, "workspaces": [await workspace(vid) for vid in body.targets]}
+
+
+def parameter_proposal(v, pid):
+    for proposal in v.parameter_proposals:
+        if proposal["id"] == pid:
+            return proposal
+    raise HTTPException(404, "Parameter proposal not found on this vehicle")
+
+
+@app.post("/api/vehicles/{vid}/parameter-proposals/{pid}/discard")
+async def discard_parameters(vid: str, pid: str):
+    v = vehicle(vid)
+    p = parameter_proposal(v, pid)
+    if p["status"] != "pending":
+        raise HTTPException(409, "Only pending proposals can be discarded")
+    p["status"] = "discarded"
+    event(vid, "parameters_discarded", p)
+    return await workspace(vid)
+
+
+@app.post("/api/vehicles/{vid}/parameter-proposals/{pid}/apply")
+async def apply_parameters(vid: str, pid: str, request: Request):
+    v = vehicle(vid)
+    authorize(v, request)
+    p = parameter_proposal(v, pid)
+    if p["status"] == "verified":
+        return await workspace(vid)
+    if p["status"] != "pending" or p["epoch"] != v.telemetry.epoch or p["expires_at"] < time.time():
+        raise HTTPException(409, "Proposal is stale or already attempted; request a new proposal")
+    if (
+        v.telemetry.snapshot()["armed"]
+        or v.fence_busy
+        or v.parameter_apply_busy
+        or (v.trial_task and not v.trial_task.done())
+    ):
+        raise HTTPException(409, "Disarm and finish configuration updates or diagnostics first")
+    for param in p["parameters"]:
+        current = v.params.get(param["name"])
+        if not current or not math.isclose(
+            current["value"], param["expected"], rel_tol=1e-6, abs_tol=1e-5
+        ):
+            raise HTTPException(409, "Parameter changed since proposal; request a new proposal")
+        try:
+            validate_parameter(v.profile, param["name"], param["value"])
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+    p["status"] = "applying"
+    v.parameter_apply_busy = True
+    try:
+        for param in p["parameters"]:
+            if v.closed or v.telemetry.epoch != p["epoch"] or v.telemetry.snapshot()["armed"]:
+                raise RuntimeError("Vehicle state changed; remaining writes stopped")
+            j = submit(v, "parameter_write", {k: param[k] for k in ("name", "value", "expected")})
+            p["results"].append({"name": param["name"], "job_id": j["id"]})
+            await await_job(j)
+            p["results"][-1]["result"] = public_job(j)
+        p["status"] = "verified"
+    except Exception as exc:
+        p["status"] = "failed"
+        p["error"] = (
+            "Stopped: "
+            + str(exc)[:300]
+            + ". Earlier verified writes remain applied; inspect results before retrying."
+        )
+    finally:
+        v.parameter_apply_busy = False
+        event(vid, "parameters_proposal_result", p)
+    return await workspace(vid)
 
 
 class Chat(BaseModel):
@@ -1198,6 +1350,8 @@ async def run_trial(v, body):
 async def trial_start(vid: str, body: Trial, request: Request):
     v = vehicle(vid)
     authorize(v, request)
+    if v.parameter_apply_busy or v.fence_busy:
+        raise HTTPException(409, "Wait for configuration updates to finish")
     if not settings.value.monitor_enabled:
         raise HTTPException(
             409, "Enable automatic assessments in Settings before a monitored trial"
