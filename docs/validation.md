@@ -1,5 +1,13 @@
 # Validation record
 
+## Public documentation, license and setup verification
+
+The documentation iteration adds a full fresh-clone README, the MIT license for original repository code, `CLAUDE.md` iteration/commit/documentation rules, and four direct browser screenshots. Screenshot provenance and refresh instructions are recorded in [screenshots/README.md](screenshots/README.md). The images show two real native Copter SITL sessions, a real Ollama-generated mission/parameter proposal, the mission editor, settings and diagnostics. The first copter completed reviewed upload, takeoff, AUTO transit/loiter at 30 m, then LAND and disarming. Automatic monitoring remained paused; one real planning request was used.
+
+A new temporary application checkout and Python virtual environment exercised the documented setup script with the pinned requirements, including the added `requirements-sitl.txt`. Application dependencies installed, an empty-key `.env` was created with mode 0600, Copter/Plane/Rover metadata was generated, the production frontend built, and `pip check` passed. This check reused the existing pinned upstream source checkout and host Node 22; it was not a fresh operating-system or full native compiler/toolchain installation.
+
+All README/local documentation links and heading targets were checked. All four JPEGs were inspected visually and decoded successfully at 1796 × 1043. The temporary application server used port 8091 and was stopped after capture; port 8080 remained stopped. Historical claims about an unconfigured remote were removed from current operating documentation.
+
 ## Interaction mode, flight cues and instruments
 
 The update passes **74 automated tests**, Python lint and the production TypeScript/Vite build. Tests cover all-target validation before mutations, unselected/repeated targets, session/revision races including untouched targets, profile-specific commands, supplied-parameter restrictions, integer/enum checks, expiry, armed/configuration conflicts, idempotent Apply and truthful partial-write failures. Navigation tests cover reported target precedence, coordinate masks, mission sequence offsets, stale/disarmed/manual suppression and geographic projection. Existing saved prompts retain custom content when the fourth interaction prompt is introduced.

@@ -46,7 +46,7 @@ The initial monitor cadence is **20 seconds after each completed assessment**, c
 
 ## Inference and secret boundaries
 
-The key is loaded only on the backend from ignored `.env`, which has mode `0600`. It is not sent to the browser, placed in prompts, recorded in audit payloads, or committed. No Git remote is configured and no push is needed to run the app.
+The key is loaded only on the backend from ignored `.env`, which has mode `0600`. It is not sent to the browser, placed in prompts, recorded in audit payloads, or committed. The application repository is published at `https://github.com/standon99/copilot-gcs`; publishing does not include `.env`, runtime data or the separate ArduPilot checkout. No push is needed to run the app.
 
 Inference uses one-shot Python subprocesses and anonymous pipes. On this Mac, `sandbox-exec` denies reads of `.env`, `.git`, the entire runtime tree and the ArduPilot checkout, denies filesystem writes, and denies outbound loopback network connections. The worker receives only the selected prompt/payload plus the credentials needed to contact the configured provider. It has no dynamic tools, shell evaluator, vehicle client, injector, or application session cookie. Cloud responses are parsed as JSON and validated in the parent; monitor citations must refer to supplied evidence IDs. On other platforms the UI explicitly reports that this filesystem sandbox is unavailable.
 

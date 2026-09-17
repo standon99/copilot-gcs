@@ -1,0 +1,10 @@
+# Native SITL build and firmware-derived parameter metadata, with Python 3.13.
+# Install alongside requirements.txt. MAVProxy is optional and not needed by the web GCS.
+dronecan==1.0.27
+empy==3.3.4
+future==1.0.0
+lxml==6.1.3
+numpy==2.5.3
+packaging==26.3
+pexpect==4.9.0
+setuptools==80.10.2
