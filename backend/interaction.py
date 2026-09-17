@@ -6,6 +6,7 @@ import re
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import PROFILES
+from .geography import ExclusionProposal
 from .metadata import metadata, validate_parameter
 from .planning import apply_patch
 from .watches import WatchRule
@@ -25,6 +26,7 @@ class VehicleEdits(BaseModel):
     parameters: list[ParameterProposal] = Field(default_factory=list, max_length=20)
     watch_rules: list[WatchRule] = Field(default_factory=list, max_length=20)
     watch_notes: str | None = Field(default=None, max_length=2000)
+    exclusion_proposal: ExclusionProposal | None = None
 
 
 class InteractionResponse(BaseModel):
@@ -64,7 +66,7 @@ def parameter_context(profile, params, message):
     return [entry for _, entry in sorted(candidates, key=lambda p: (-p[0], p[1]["name"]))[:40]]
 
 
-def validate_edits(raw, snapshots, live):
+def validate_edits(raw, snapshots, live, map_image=None):
     """Validate the entire response before changing any vehicle's local draft."""
     response = InteractionResponse.model_validate(raw)
     for vid, before in snapshots.items():
@@ -126,6 +128,11 @@ def validate_edits(raw, snapshots, live):
                 "parameters": params,
                 "watch_rules": [r.model_dump() for r in edit.watch_rules],
                 "watch_notes": edit.watch_notes,
+                "exclusion_proposal": (
+                    edit.exclusion_proposal.resolve(map_image)
+                    if edit.exclusion_proposal is not None
+                    else None
+                ),
             }
         )
     return response.reply, prepared

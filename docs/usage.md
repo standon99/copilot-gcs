@@ -2,41 +2,39 @@
 
 [Project overview](../README.md)
 
-## From a task to a mission
+## Workspace
 
-The start page lets you write a task before connecting. **Quick flight**, **Point
-inspection** and **Waypoint route** fill an editable brief for Copter; Plane and
-Rover have vehicle-appropriate starters. Choosing a starter makes no model call.
-An inspection prompt asks for coordinates, altitude above home and hold duration;
-it does not assume a camera or obstacle clearance.
+Choose a profile/count and **Start simulation**, or **Connect telemetry**.
+Wait for the selected vehicle's home and position. An optional start-page brief
+carries into Chat; launching a simulator makes no AI request.
 
-Choose a profile and **Continue in simulation**, or **Connect telemetry** to open
-connection settings. The brief stays in the composer. Wait for telemetry/home,
-then send it to **Copilot**. The AI can ask questions or create a local draft.
-Refine it through conversation or edit the map and waypoint table directly.
+**Flight** is one workspace. Instruments and contextual flight controls stay on
+the left. Switch the map between **Live map** and **Plan mission**. On the right,
+**Chat** is the conversation, **Alerts** contains warnings and AI assessments,
+and **Watch rules** contains rule configuration and acknowledgement.
 
-The mission strip shows **Describe → Review → Upload → Operate**. Review the
-current revision, enable vehicle controls and upload explicitly. Open **Operate** for
-arming and flight controls. A later edit returns the workflow to review while
-the older uploaded mission stays onboard. Use **Diagnostics** for simulation
-failure scenarios when needed. Physical-vehicle control is not enabled.
+Describe a mission in Chat or edit it manually. **Check draft** runs numerical
+checks without inference. **Ask AI to review** requests a model assessment in
+the conversation. Resolve blockers, enable controls and **Upload mission**.
+Upload remains disarmed-only and independently verified.
 
-If upload reports that home or configuration changed after review, inspect that
-change and use **Refresh checks** in the mission strip to rerun numerical checks
-without another AI request. Earlier AI comments retain their original context.
-**Review plan** requests a fresh AI assessment as well as numerical checks.
+Flight controls then offers explicit prepare-mode, arm and start actions.
+A configuration/home change invalidates the review: use **Check draft** or
+**Recheck**. An edited draft does not alter the already uploaded mission.
+**Clear draft** removes its waypoints and intent, including draft areas; Undo
+restores a prior revision. Onboard missions/fences require separate changes.
 
 ## Using the app
 
 ### Waypoints, altitude and deployment
 
-1. Select the intended vehicle tab. In **Plan**, click the map to add points or drag an existing point.
+1. Select the intended vehicle tab. In **Plan mission**, click the map to add points or drag an existing point.
 2. Edit each row's **Altitude m** and **Reference**. **Relative home** means metres above the vehicle's home; **AMSL** means metres above mean sea level. Press Enter or leave the field to save. Terrain-relative missions are blocked because terrain coverage is not implemented.
 3. Use supported commands: waypoint (16), unlimited/timed loiter (17/19), return home (20), ground-speed change (178), and takeoff/land (22/21) for aerial vehicles. Rover has no aerial takeoff/land commands.
 4. Optionally import a checked example from [`examples/`](../examples/). Its coordinates are at the Canberra SITL site; adapt them for another location.
-5. **Review plan** attaches numerical checks and requests a real model review. Resolve blockers and inspect warnings/unknowns.
-6. **Enable vehicle controls**, then **Upload mission · version …** in the copilot panel. Upload is disarmed-only and verifies an onboard readback. A later draft edit does not change the active mission.
-7. Open **Operate**. For a ground-start mission, set **GUIDED** (Copter), **FBWA** (Plane), or **HOLD** (Rover), then **Arm**, then **Start mission**. Copter/Plane missions need an appropriate Takeoff item first. Start switches the autopilot to mission execution; a separate GUIDED **Take off** is available for Copter. Native prearm checks remain enabled; inspect vehicle status messages when a command is refused.
+5. **Check draft** runs numerical checks; **Ask AI to review** optionally adds a model review. Resolve blockers and inspect warnings/unknowns.
+6. **Enable vehicle controls**, then **Upload mission** above the map. Upload is disarmed-only and verifies an onboard readback. A later draft edit does not change the active mission.
+7. Use **Flight controls**. For a ground-start mission, **Prepare flight** selects GUIDED (Copter), FBWA (Plane), or HOLD (Rover); then choose **Arm vehicle**, then **Start mission**. Copter/Plane missions need an appropriate Takeoff item first. Start switches the autopilot to mission execution; a separate GUIDED **Take off** is available for Copter. Native prearm checks remain enabled; inspect vehicle status messages when a command is refused.
 
 **Version 1** (formerly `r1`) is the draft's edit counter, not its name. Every edit
 creates a new version. **Enable vehicle controls** (formerly “Claim control”)
@@ -68,7 +66,7 @@ Open **Mission intent & operating constraints** and describe what the operation 
 
 ### Custom watch rules and immediate AI advice
 
-In **AI planning**, describe watches in the same message as a mission, or expand
+In **AI planning**, describe watches in the same message as a mission, or open
 **Watch rules → Ask Copilot for watches**. For example:
 
 > Keep this concern in view: possible prop damage, not confirmed. Ask me which
@@ -119,9 +117,37 @@ restart; saved model/prompt/frequency preferences do persist.
 
 ### Geofence
 
-In **Plan → Onboard geofence**, enable vehicle controls while disarmed, choose **Enable onboard fence**, enter radius and optional maximum altitude above home, select the breach action, then **Apply onboard fence**. The configured circle appears as an amber dashed boundary; use zoom/fit controls if it is outside the viewport.
+In **Plan mission**, choose **Draw exclusion area**, click at least three corners,
+then **Finish area**. Drag a numbered vertex while drawing/editing, undo the last
+vertex, or cancel with Escape. **Manage areas → Edit area** reopens a boundary; the trash button
+removes it from the draft. Self-crossing/degenerate areas are rejected. Undo,
+export and import include the areas. Draft changes are separate from onboard fences.
 
-The editor configures a home-centred circle plus optional ceiling, sets the ceiling datum explicitly, and reads settings back. It replaces fence-type selection and disables automatic enable-on-flight behavior. It does not upload polygon fences. Mission-intent exclusion polygons are separate advisory constraints. [ArduPilot geofence reference](https://ardupilot.org/copter/docs/common-geofencing-landing-page.html).
+Red boundaries are draft areas, purple is an AI proposal, amber is the last
+downloaded/uploaded onboard snapshot. Numerical checks block waypoints and
+straight route legs crossing exclusions, including home departure and RTL.
+They do not model curved turns, loiter footprints or obstacle-avoidance paths.
+
+To enforce areas onboard, enable vehicle controls while disarmed, open
+**Onboard geofence**, **Read onboard areas**, select a breach action, then
+**Upload & enable areas**. This replaces the exclusion bank after a fresh conflict
+check, transfers MAVLink2 fence items and independently downloads them for
+comparison. It enables the polygon type last and preserves circle/ceiling types.
+At most 70 total vertices are supported. Home/current position cannot lie inside
+a newly uploaded area. Unsupported existing inclusion/circle/return-point bank
+items block replacement rather than being silently erased.
+Empty the draft areas and choose **Clear onboard areas** to remove that bank.
+
+The separate circle/ceiling editor preserves polygon/minimum-altitude selections.
+Both upload paths disable automatic enable-on-flight behavior. Report Only does
+not command recovery. A fence's breach action does not guarantee automatic
+detouring. See [ArduPilot fencing](https://ardupilot.org/copter/docs/common-polygon_fence.html).
+
+For AI-drawn boundaries, select a vision model, **Attach map for vision model**
+and describe the area. Inspect the purple boundary before **Accept areas**;
+acceptance edits the local draft only. A text model can also propose boundaries
+from supplied coordinates. The [documented AI interface](ai-interface.md) is
+sent to the model on every planning request.
 
 ### Map, flight instrument and multiple copters
 

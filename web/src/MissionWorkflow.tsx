@@ -1,10 +1,3 @@
-import {
-  Check,
-  MessageSquare,
-  ClipboardCheck,
-  Upload,
-  Navigation,
-} from "lucide-react";
 import { missionProgress, uploadReason } from "./missionFlow.mjs";
 
 export function MissionWorkflow({
@@ -12,107 +5,68 @@ export function MissionWorkflow({
   vehicle,
   control,
   busy,
-  onDescribe,
-  onReview,
   onUpload,
-  onOperate,
-  onClaimControl,
   onRefreshChecks,
+  onClaimControl,
+  view,
+  onView,
 }: any) {
   const progress = missionProgress(workspace, vehicle);
-  const canUpload =
-    progress.reviewed && vehicle.owned && !vehicle.armed && control && !busy;
-  const steps = [
-    {
-      title: "Describe",
-      icon: MessageSquare,
-      action: onDescribe,
-      disabled: busy,
-    },
-    {
-      title: "Review",
-      icon: ClipboardCheck,
-      action: onReview,
-      disabled: !progress.hasDraft || busy,
-    },
-    {
-      title: "Upload",
-      icon: Upload,
-      action: onUpload,
-      disabled: !canUpload || progress.uploaded,
-    },
-    { title: "Operate", icon: Navigation, action: onOperate, disabled: false },
-  ];
-  let next = "Describe your task to Copilot, or add waypoints on the map.";
-  if (progress.stage === 1)
-    next = "Review this draft, then resolve any blocking issues.";
-  if (progress.stage === 2)
-    next = !vehicle.owned
-      ? "This connection supports telemetry only. Vehicle writes are available in simulation."
-      : vehicle.armed
-        ? "Disarm before uploading a replacement mission."
-        : !control
-          ? "Enable vehicle controls, then upload the reviewed mission."
-          : "Upload this reviewed draft. Arming and starting are separate steps.";
-  if (progress.stage === 3)
-    next =
-      vehicle.armed && vehicle.mode === "AUTO"
-        ? "Mission running. Follow progress in Operate and ask Copilot about live telemetry."
-        : "Mission uploaded and verified. Open Operate for arming and mission controls.";
   return (
-    <section className="mission-workflow" aria-label="Mission workflow">
-      <div className="workflow-steps">
-        {steps.map(({ title, icon: Icon, action, disabled }, index) => (
-          <button
-            key={title}
-            disabled={disabled}
-            onClick={action}
-            className={
-              index === progress.stage
-                ? "current"
-                : index < progress.stage
-                  ? "complete"
-                  : ""
-            }
-            aria-current={index === progress.stage ? "step" : undefined}
-          >
-            {index < progress.stage ? <Check size={16} /> : <Icon size={16} />}
-            <span>
-              {index + 1}. {title}
-            </span>
-          </button>
-        ))}
+    <section className="mission-status-bar" aria-label="Mission status">
+      <div className="workspace-view-switch" aria-label="Map workspace view">
+        <button
+          className={view === "flight" ? "active" : ""}
+          onClick={() => onView("flight")}
+        >
+          Live map
+        </button>
+        <button
+          className={view === "plan" ? "active" : ""}
+          onClick={() => onView("plan")}
+        >
+          Plan mission
+        </button>
       </div>
-      <div className="workflow-next">
+      <div className="mission-status-copy">
+        <strong>
+          {progress.uploaded
+            ? `Onboard · version ${workspace.active.revision}`
+            : progress.hasDraft
+              ? `Draft · version ${workspace.draft.revision}`
+              : "No mission yet"}
+        </strong>
         <span>
-          {progress.stage === 1 || progress.stage === 2
+          {progress.hasDraft
             ? uploadReason(workspace, vehicle, control, busy)
-            : next}
+            : "Chat with Copilot or open Plan mission to add waypoints."}
         </span>
-        {progress.hasDraft && !progress.uploaded && (
-          <button
-            disabled={busy}
-            onClick={onRefreshChecks}
-            title="Refresh numerical checks for the latest vehicle state without an AI request"
-          >
-            Refresh checks
+      </div>
+      {progress.hasDraft && !progress.uploaded && (
+        <div className="button-row">
+          <button disabled={busy} onClick={onRefreshChecks}>
+            {progress.reviewed ? "Recheck" : "Check draft"}
           </button>
-        )}
-        {progress.stage === 2 &&
-          vehicle.owned &&
-          !vehicle.armed &&
-          !control && (
+          {progress.reviewed && !control && vehicle.owned && (
             <button disabled={busy} onClick={onClaimControl}>
-              Enable vehicle controls
+              Enable controls
             </button>
           )}
-        {workspace?.active && !progress.uploaded && (
-          <small>
-            Onboard: version {workspace.active.revision} · Editing a separate
-            draft
-          </small>
-        )}
-      </div>
+          <button
+            className="primary"
+            disabled={
+              !progress.reviewed ||
+              !control ||
+              !vehicle.owned ||
+              vehicle.armed ||
+              busy
+            }
+            onClick={onUpload}
+          >
+            Upload mission
+          </button>
+        </div>
+      )}
     </section>
   );
 }

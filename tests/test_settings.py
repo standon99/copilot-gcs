@@ -135,7 +135,7 @@ def test_fence_ceiling_datum_and_conflict():
     params = {k: {"value": v} for k, v in values.items()}
     edit = FenceEdit(enabled=True, radius=200, action=1, max_alt=80, expected=values)
     changed = fence_changes("copter", params, edit)
-    assert changed["FENCE_ALT_MAX_TP"] == 1 and changed["FENCE_TYPE"] == 3
+    assert changed["FENCE_ALT_MAX_TP"] == 1 and changed["FENCE_TYPE"] == 7
     assert list(changed)[-1] == "FENCE_ENABLE"
     params["FENCE_RADIUS"]["value"] = 350
     with pytest.raises(ValueError, match="changed"):

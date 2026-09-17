@@ -2115,6 +2115,80 @@ footer .divider {
   padding: 5px 8px;
   border-radius: 3px;
 }
+.map-area-tools {
+  position: absolute;
+  top: 96px;
+  left: 18px;
+  z-index: 110;
+  display: grid;
+  gap: 8px;
+  max-width: min(480px, calc(100% - 36px));
+  padding: 12px;
+  background: #14202bf2;
+  border: 1px solid #9e5d58;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.map-area-tools > span {
+  color: #c8d5df;
+  font-size: 11px;
+}
+.area-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 95px;
+  overflow: auto;
+}
+.area-list > div {
+  display: flex;
+  gap: 3px;
+}
+.area-vertex {
+  background: #a33e37;
+  color: white;
+  border: 2px solid #ffb0a5;
+  border-radius: 50%;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  font-size: 11px;
+}
+.area-proposal {
+  padding: 12px;
+  border: 1px solid #aa80d5;
+  border-radius: 6px;
+  background: #322343;
+  margin: 10px 0;
+}
+.area-proposal p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.map-attachment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 11px;
+}
+.map-attachment img {
+  width: 110px;
+  max-height: 75px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+.map-attachment span {
+  flex: 1;
+}
+.polygon-upload {
+  padding: 12px;
+  border: 1px solid #6d5b3d;
+  background: #28241c;
+  border-radius: 5px;
+  margin: 12px 0;
+}
 .map-top {
   z-index: 120;
 }
@@ -2522,5 +2596,246 @@ footer .divider {
   }
   .task-brief {
     padding: 16px;
+  }
+}
+
+/* One flight workspace: instruments, map/planner, and a conversation/alert pane. */
+.panel-hidden {
+  display: none !important;
+}
+.flight-deck {
+  width: 260px;
+  flex: 0 0 260px;
+  padding: 12px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: #14212b;
+}
+.flight-deck .attitude-instrument {
+  float: none;
+  width: 100%;
+  margin: 0 0 12px;
+}
+.flight-deck .instrument-body {
+  display: block;
+}
+.flight-deck .instrument-body svg {
+  width: 100%;
+}
+.flight-deck .instrument-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0 12px;
+}
+.flight-deck .instrument-heading {
+  flex-wrap: wrap;
+}
+.flight-actions {
+  display: grid;
+  gap: 10px;
+}
+.flight-actions h2 {
+  font-size: 14px;
+}
+.flight-actions p {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  color: #a8becc;
+}
+.flight-actions small {
+  font-size: 10px;
+  color: #8fa8b9;
+  line-height: 1.5;
+}
+.flight-actions .section-title {
+  margin: 0;
+}
+.flight-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.manual-controls {
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.manual-controls summary {
+  cursor: pointer;
+  color: #abc7d9;
+  margin-bottom: 10px;
+}
+.manual-controls label {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.manual-controls button {
+  margin-bottom: 6px;
+}
+.flight-alert-summary {
+  display: grid;
+  text-align: left;
+  gap: 8px;
+  width: 100%;
+  white-space: normal;
+  margin-top: 18px;
+  padding: 12px;
+}
+.flight-alert-summary span {
+  font-size: 10px;
+  color: #adc5d1;
+}
+.flight-alert-summary.has-alert,
+.copilot-tabs .has-alert {
+  border-color: #d65e5e;
+  color: #ff9a93;
+  background: #3b2228;
+}
+.mission-status-bar {
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #172832;
+  flex-shrink: 0;
+}
+.workspace-view-switch {
+  display: flex;
+  gap: 4px;
+}
+.workspace-view-switch .active,
+.copilot-tabs .active {
+  border-color: #63c7b5;
+  background: #245047;
+  color: #c7fff1;
+}
+.mission-status-copy {
+  flex: 1;
+  min-width: 175px;
+  display: grid;
+  gap: 5px;
+}
+.mission-status-copy strong {
+  font-size: 12px;
+}
+.mission-status-copy span {
+  color: #9cb5c4;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.plan-checks {
+  border: 1px solid var(--border);
+  padding: 10px;
+  border-radius: 5px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.plan-checks summary {
+  cursor: pointer;
+  color: #a8d6d0;
+  margin-bottom: 5px;
+}
+.plan-checks small {
+  color: #95abb9;
+}
+.copilot-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.copilot-tabs button {
+  flex: 1;
+  justify-content: center;
+  padding: 8px 6px;
+  font-size: 11px;
+}
+.copilot-tabs b {
+  border-radius: 10px;
+  padding: 1px 5px;
+  background: #14202c;
+}
+.watches-pane {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.watches-pane .watch-panel {
+  max-height: none;
+  margin: 12px;
+}
+.alerts-pane {
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+  font-size: 12px;
+}
+.alerts-pane > p {
+  color: #9ab3c3;
+  line-height: 1.5;
+}
+.alerts-pane .rule {
+  display: block;
+  margin: 8px 0;
+}
+.pending-watch-link {
+  font-size: 11px;
+  color: #c6e4ff;
+  margin: 5px 0;
+}
+@media (max-width: 1350px) {
+  .flight-deck {
+    width: 220px;
+    flex-basis: 220px;
+    padding: 8px;
+  }
+  .copilot {
+    width: 340px;
+    min-width: 320px;
+  }
+  .map-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .map-buttons {
+    flex-wrap: wrap;
+  }
+  .map-area-tools {
+    top: 132px;
+  }
+}
+@media (max-width: 1000px) {
+  .flight-deck {
+    width: 190px;
+    flex-basis: 190px;
+  }
+  .copilot {
+    width: 300px;
+    min-width: 280px;
+  }
+  .instrument-values dd {
+    font-size: 13px;
+  }
+}
+@media (max-width: 700px) {
+  .flight-deck {
+    width: 100%;
+    flex-basis: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .flight-deck .flight-alert-summary {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .copilot {
+    width: 100%;
+    min-width: 0;
   }
 }

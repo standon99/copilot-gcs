@@ -188,3 +188,23 @@ def test_log_download_repairs_missing_chunk_and_publishes_atomically(tmp_path):
     assert calls == [(0, 200), (90, 90)]
     assert (tmp_path / "dataflash-1.bin").read_bytes() == bytes([0] * 90 + [1] * 90 + [2] * 20)
     assert not (tmp_path / "dataflash-1.partial").exists()
+
+
+def test_land_default_direction_roundtrip_is_verified():
+    g, point = timed_hold_roundtrip(requested={"command": 21}, changes={"p3": 0, "p4": 1})
+    assert g.upload([point], {"lat": 1, "lon": 1, "alt": 600})["status"] == "verified"
+
+
+@pytest.mark.parametrize("changes", [{"p4": -1}, {"p4": 2}, {"lat": 2}, {"alt": 20}, {"p1": 40}])
+def test_land_normalization_does_not_mask_other_changes(changes):
+    g, point = timed_hold_roundtrip(
+        requested={"command": 21}, changes={"p3": 0, "p4": 1, **changes}
+    )
+    with pytest.raises(RuntimeError, match="mismatch"):
+        g.upload([point], {"lat": 1, "lon": 1, "alt": 600})
+
+
+def test_explicit_land_direction_still_must_match():
+    g, point = timed_hold_roundtrip(requested={"command": 21, "p4": -1}, changes={"p3": 0, "p4": 1})
+    with pytest.raises(RuntimeError, match="p4 readback mismatch"):
+        g.upload([point], {"lat": 1, "lon": 1, "alt": 600})

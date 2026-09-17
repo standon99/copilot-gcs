@@ -25,6 +25,7 @@ export function WatchPanel({
   onSaved,
   onAsk,
   onSettings,
+  expanded = false,
 }: any) {
   const book = vehicle.watches || { revision: 0, notes: "", rules: [] };
   const [form, setForm] = useState<any>(null),
@@ -61,7 +62,7 @@ export function WatchPanel({
       className={"watch-panel" + (fired ? " has-alert" : "")}
       aria-label="Watch rules"
     >
-      <details>
+      <details open={expanded}>
         <summary>
           <strong>Watch rules</strong>
           <span>

@@ -62,7 +62,9 @@ class Provider:
         self.monitor_slots = asyncio.Semaphore(2)
         self.planner_slots = asyncio.Semaphore(1)
 
-    async def complete(self, system, payload, monitor=False, options=None, operation="chat"):
+    async def complete(
+        self, system, payload, monitor=False, options=None, operation="chat", image=None
+    ):
         options = options or self.settings.get()
         key = credential_for(options["base_url"])
         timeout = options["inference_timeout"]
@@ -89,7 +91,17 @@ class Provider:
                 "timeout": timeout,
                 "messages": [
                     {"role": "system", "content": system},
-                    {"role": "user", "content": json.dumps(payload, allow_nan=False)},
+                    {
+                        "role": "user",
+                        "content": (
+                            [
+                                {"type": "text", "text": json.dumps(payload, allow_nan=False)},
+                                {"type": "image_url", "image_url": {"url": image}},
+                            ]
+                            if image
+                            else json.dumps(payload, allow_nan=False)
+                        ),
+                    },
                 ],
             }
             started = time.time()

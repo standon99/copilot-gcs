@@ -8,9 +8,11 @@ relevant design, implementation and validation documents before making changes.
 - The product is **Copilot GCS**, an AI-enabled ground control station that makes
   everyday drone tasks easy. Lead with waypoint flights, point inspections and
   conversational planning. AI is part of the main workflow.
-- Use **Describe → Review → Upload → Operate** as the primary flow. Simulation
-  and diagnostics support that flow; do not brand the product as a research
-  edition or a fault-detection experiment.
+- Use one **Flight** workspace: vehicle selection, live map/mission editor,
+  instruments and contextual flight controls. Keep Chat, Alerts and Watch rules
+  distinct. Simulation and diagnostics support this workflow.
+- Keep interface copy plain and functional. Do not add branding taglines,
+  motivational phrases, repeated AI slogans or a separate four-step flow strip.
 - Keep the distinction between current simulator control/external telemetry and
   future validated physical-vehicle operation explicit. Product copy must not
   imply that camera capture, survey coverage or autonomous connection setup is

@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 
-export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
+export function FencePanel({
+  vehicle,
+  draft,
+  control,
+  onChanged,
+  onClaim,
+}: any) {
   const [loaded, setLoaded] = useState<any>(null),
     [form, setForm] = useState<any>(null);
   const [busy, setBusy] = useState(false),
@@ -11,6 +17,7 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
     setLoaded(data);
     setForm({
       enabled: data.enabled,
+      circle: data.circle,
       radius: data.radius ?? 300,
       margin: data.values.FENCE_MARGIN ?? 2,
       action: data.values.FENCE_ACTION ?? 1,
@@ -39,10 +46,95 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
         </button>
       </div>
       <p>
-        A circle centred on the vehicle's reported home, with an optional
-        ceiling above home. These settings are written to ArduPilot separately
-        from the mission upload.
+        Draw red exclusion areas on the map, then upload them here. Fences are
+        separate from mission upload. Route crossings block mission upload;
+        onboard breaches use the chosen action, without automatic route
+        planning.
       </p>
+      <div className="polygon-upload">
+        <strong>
+          {draft?.intent?.exclusions?.length || 0} draft exclusion areas ·{" "}
+          {(draft?.intent?.exclusions || []).reduce(
+            (n: number, ring: any[]) => n + ring.length,
+            0,
+          )}
+          /70 onboard vertices
+        </strong>
+        <p>
+          {loaded?.bank
+            ? `${loaded.bank.polygons.length} onboard areas read at ${new Date(loaded.bank.loaded_at * 1000).toLocaleTimeString()}. ${loaded.polygon && loaded.enabled ? "Polygon fence enabled." : "Polygon fence not enabled."}`
+            : "Read the onboard areas before replacing them."}
+        </p>
+        {loaded?.bank?.error && <p className="error">{loaded.bank.error}</p>}
+        <div className="button-row">
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                load(await api(`/vehicles/${vehicle.id}/fence/polygons`));
+              } catch (e: any) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Read onboard areas
+          </button>
+          <button
+            className="primary"
+            disabled={
+              busy ||
+              !control ||
+              vehicle.armed ||
+              !vehicle.owned ||
+              !loaded?.bank ||
+              !!loaded.bank.error
+            }
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              setMessage("");
+              try {
+                const result = await api(
+                  `/vehicles/${vehicle.id}/fence/polygons`,
+                  "POST",
+                  {
+                    expected_revision: draft.revision,
+                    expected_items: loaded.bank.items,
+                    expected: loaded.values,
+                    action: form.action,
+                  },
+                );
+                load(result);
+                setMessage(
+                  "Exclusion areas uploaded and independently read back. Fence enable state verified.",
+                );
+                onChanged();
+              } catch (e: any) {
+                setError(e.message);
+                setLoaded((old: any) => old && { ...old, bank: null });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy
+              ? "Working…"
+              : draft?.intent?.exclusions?.length
+                ? "Upload & enable areas"
+                : "Clear onboard areas"}
+          </button>
+        </div>
+        <p>
+          This replaces the onboard exclusion bank with these draft areas,
+          preserving circle/altitude settings. Reducing or clearing areas takes
+          effect only when uploaded. Unsupported onboard fence types are
+          protected from replacement.
+        </p>
+      </div>
       {error && (
         <div className="banner error" role="alert">
           {error}
@@ -66,12 +158,21 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
               Enable onboard fence
             </label>
             <label>
+              <span className="check-row">
+                <input
+                  type="checkbox"
+                  checked={form.circle}
+                  onChange={(e) => change({ circle: e.target.checked })}
+                />
+                Limit radius from home
+              </span>
               Radius from home (m)
               <input
                 type="number"
                 min="30"
                 max="10000"
                 value={form.radius}
+                disabled={!form.circle}
                 onChange={(e) => change({ radius: +e.target.value })}
               />
             </label>
@@ -123,13 +224,9 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
             )}
           </div>
           <p>
-            This editor selects the circle
-            {vehicle.profile !== "rover"
-              ? " and optional maximum-altitude"
-              : ""}{" "}
-            fence types and disables automatic enable-on-flight behavior.
-            Existing polygon/minimum-altitude type selections will be replaced.
-            Report Only records a breach without a recovery action.
+            Circle/ceiling edits preserve polygon and minimum-altitude
+            selections and disable automatic enable-on-flight behavior. Report
+            Only records a breach without a recovery action.
           </p>
           <p>
             {vehicle.home
@@ -150,6 +247,7 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
                   "PUT",
                   {
                     enabled: form.enabled,
+                    circle: form.circle,
                     radius: form.radius,
                     margin: form.margin,
                     action: form.action,

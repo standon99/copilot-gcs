@@ -1,0 +1,80 @@
+{
+  "date": "2026-09-17",
+  "firmware": "dbe792162d06cab66c3475fd5556bf7a120f119e",
+  "fences": [
+    {
+      "profile": "copter",
+      "areas": 2,
+      "vertices": 8,
+      "enabled": true,
+      "type": 7.0,
+      "status": "verified"
+    },
+    {
+      "profile": "plane",
+      "areas": 1,
+      "vertices": 4,
+      "enabled": true,
+      "type": 4.0,
+      "status": "verified"
+    },
+    {
+      "profile": "rover",
+      "areas": 0,
+      "vertices": 0,
+      "enabled": true,
+      "type": 2.0,
+      "status": "verified"
+    },
+    {
+      "profile": "copter",
+      "areas": 0,
+      "vertices": 0,
+      "enabled": false,
+      "type": 3.0,
+      "status": "verified"
+    }
+  ],
+  "clear": {
+    "status": "verified",
+    "preserved_circle": true,
+    "type": 2.0
+  },
+  "land_roundtrip": {
+    "status": "verified",
+    "items": 5,
+    "default_land_p4": 0,
+    "readback_land_p4": 1.0,
+    "armed": false
+  },
+  "initial_rover_upload": {
+    "status": "verified",
+    "vertices": 4,
+    "applied": [
+      "FENCE_ENABLE=0",
+      "polygon bank verified",
+      "FENCE_TYPE=6",
+      "FENCE_ACTION=1",
+      "FENCE_ENABLE=1"
+    ]
+  },
+  "vision": {
+    "model": "qwen3.5:397b",
+    "latency_s": 57.9,
+    "image_size": [
+      1280,
+      855
+    ],
+    "proposed_areas": 3,
+    "existing_areas_preserved": 2,
+    "coordinate_space_returned": "geographic",
+    "calls": 1,
+    "note": "A real map image produced a valid preview. Boundary accuracy/clearance is not validated; manual inspection required."
+  },
+  "conditions": {
+    "phase": "disarmed",
+    "runtime": "isolated test server",
+    "automatic_inference": false,
+    "physical_flight": false
+  }
+}

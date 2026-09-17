@@ -1,5 +1,55 @@
 # Validation record
 
+## Flight workspace, exclusion areas and vision — 2026-09-17
+
+Iteration based on 338cd63. **132 Python tests and 11 frontend tests passed**,
+with Ruff checks and the production TypeScript/Vite build. Coverage includes
+invalid/quantized polygon geometry, departure/RTL intersections, pixel conversion,
+image age/bounds, proposal acceptance/staleness, mission-type isolation,
+first-vertex readback, conflict and partial-failure journals, Land normalization,
+and profile-specific flight-control sequencing.
+
+Native disarmed Copter, Plane and Rover accepted exclusion polygons through
+MAVLink2 type 1, followed by independent downloads and verified parameter writes.
+Copter also accepted two polygons. Rover clearing removed the bank and polygon
+bit while retaining the circular fence. Unsupported bank types and altered
+readback are tested with protocol fixtures; no physical vehicle or deliberate
+in-flight fence breach was tested.
+
+The reported Land upload error was reproduced from the user's four-item plan.
+Pinned AP_Mission returns LAND p4=+1 for the default zero direction. A separate
+native Copter accepted takeoff, timed loiter, RTL and Land after the narrow
+normalization fix: all five downloaded items (including synthetic home) verified.
+Negative/nondefault directions and unrelated fields remain checked.
+[Measured record](geofence-validation.json).
+
+A single real qwen3.5:397b vision interaction consumed an actual 1280 × 855
+north-up map image and completed in **57.9 s**. It returned three valid geographic
+polygons, preserving the two existing areas and proposing an approximate runway
+boundary. The preview did not change the draft; acceptance changed it from two
+to three areas while the onboard bank remained two. This tests image transport,
+schema validation, preview and acceptance, not boundary accuracy or clearance.
+Pixel-coordinate conversion was tested with unit fixtures; this model response
+chose geographic coordinates. Automatic inference stayed paused.
+
+Chrome verification used the real production frontend and isolated native SITL:
+map drawing and saving without adding waypoints, area editing/cancellation,
+proposal acceptance, separate Chat/Alerts/Watch rules, functional labels and
+instrument/control layout. Screenshots were refreshed from the running UI; their
+capture conditions are in [screenshots](screenshots/README.md). The user's saved
+model, prompts and cadence were kept separate from the vision-test settings.
+The current tests were disarmed; earlier flight evidence below remains historical.
+The normal installation was restarted with fresh, empty Copter and Plane
+sessions as requested; old workspaces were privately backed up first. All 81 local
+documentation links resolved. Setup instructions were checked and remain accurate;
+no dependencies or installation steps changed.
+
+Requested slogans were removed from the interface and social-preview source.
+The deterministic PNG export was inspected. GitHub browser automation lost its
+connection while opening the image uploader, so the updated export is included
+in the repository but was not applied to the separate Social preview setting.
+
+
 ## Visible watches and operating guidance — 2026-09-17
 
 Iteration based on `8421fe8`. **109 Python tests and 8 frontend tests passed**,

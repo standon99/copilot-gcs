@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from shapely.geometry import LineString, Point, Polygon
 
 from .config import PROFILES
+from .geography import validate_polygons
 
 
 class Waypoint(BaseModel):
@@ -37,14 +38,7 @@ class Intent(BaseModel):
     def valid(self):
         if self.min_alt is not None and self.max_alt is not None and self.min_alt > self.max_alt:
             raise ValueError("Minimum altitude exceeds maximum")
-        for ring in self.exclusions:
-            if (
-                len(ring) < 3
-                or len(ring) > 1000
-                or any(not (-180 <= x <= 180 and -90 <= y <= 90) for x, y in ring)
-                or not Polygon(ring).is_valid
-            ):
-                raise ValueError("Exclusion polygons must be valid longitude/latitude rings")
+        self.exclusions = validate_polygons(self.exclusions)
         return self
 
 
@@ -151,6 +145,8 @@ def check(draft, profile, home=None):
                 add("error", "maximum_speed", "Requested speed exceeds intent.", w.id)
     for ring in d.intent.exclusions:
         poly = Polygon(ring)
+        if home and poly.intersects(Point(home["lon"], home["lat"])):
+            add("error", "excluded_home", "Reported home is inside an exclusion area.")
         for w in nav:
             if poly.intersects(Point(w.lon, w.lat)):
                 add(
@@ -159,14 +155,24 @@ def check(draft, profile, home=None):
                     "Waypoint intersects an approved exclusion region.",
                     w.id,
                 )
-        for a, b in zip(nav, nav[1:]):
-            if poly.intersects(LineString([(a.lon, a.lat), (b.lon, b.lat)])):
+        previous = (home["lon"], home["lat"]) if home else None
+        for w in d.waypoints:
+            if w.command == 20:
+                point = (home["lon"], home["lat"]) if home else None
+            elif w.command in (16, 17, 19, 21, 22):
+                point = (w.lon, w.lat)
+            else:
+                continue
+            if previous and point and poly.intersects(LineString([previous, point])):
                 add(
                     "error",
                     "excluded_leg",
-                    "Route leg intersects an approved exclusion region.",
-                    b.id,
+                    "Route leg (including departure/return) intersects an exclusion area.",
+                    w.id,
                 )
+            previous = point
+    if d.intent.exclusions and not home:
+        add("error", "exclusion_home_unknown", "Home is needed to check departure and return legs.")
     if profile != "rover" and d.waypoints and d.waypoints[0].command != 22:
         add(
             "warning",

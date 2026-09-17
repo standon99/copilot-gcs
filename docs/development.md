@@ -14,7 +14,7 @@ From the repository root, with Node 22+ on PATH:
 git diff --check
 ```
 
-The current suite contains **109 Python tests** and **8 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+The current suite contains **132 Python tests** and **11 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
 
 For an isolated runtime during development, use
 `COPILOT_RUNTIME_DIR="$PWD/runtime/test-session" COPILOT_PORT=8091 ./start.sh`.
@@ -73,3 +73,5 @@ Runtime logs and recordings remain on this computer until you deliberately expor
 ## Contributing and iteration discipline
 
 Read [CLAUDE.md](../CLAUDE.md). Every completed iteration must be committed, with relevant README/docs updates in the same commit. Setup instructions, limitations, validation claims and affected screenshots must continue to match the implementation. Run appropriate checks, inspect staged content and keep credentials/runtime data out of Git. Push only when authorized.
+
+The versioned model capability catalog is documented in [AI interface](ai-interface.md).

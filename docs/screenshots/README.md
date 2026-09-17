@@ -1,31 +1,32 @@
 # Actual application screenshots
 
-Updated 2026-09-17 from the production React frontend in Chrome at
-`http://127.0.0.1:8091`, using an isolated FastAPI runtime and native Plane, Copter
-and Rover SITL. These show the watch-rule iteration based on `8421fe8`.
-Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
+Captured 2026-09-17 from the production React frontend in Chrome at
+http://127.0.0.1:8091, using an isolated runtime and native Copter, Plane and
+Rover SITL. Code iteration based on 338cd63; firmware
+dbe792162d06cab66c3475fd5556bf7a120f119e.
 
 | File | Recorded state |
 | --- | --- |
-| `start.jpg` | Unchanged task-first onboarding capture from the preceding iteration; still matches the start page |
-| `mission-planning.jpg` | Reviewed/uploaded version 2: 20 m takeoff, timed hold and RTL; visible red latched watch alert after landing |
-| `flight.jpg` | Operate after the flight: disarmed Copter, attitude instrument, explicit mode/arm/start guidance and earlier AI assessment marked stale |
-| `settings.jpg` | Separate scheduled interval (300 s) and event minimum spacing (60 s), saved in the isolated test runtime; global pause on |
-| `diagnostics.jpg` | Native simulation scenario/seed/track controls and custom-watch isolation guidance; no failure injection in this capture |
+| start.jpg | Empty installation view after test simulators were stopped |
+| mission-planning.jpg | Manually prepared 30 m draft with four mission items, three draft exclusion areas, two onboard areas and one disabled operator watch |
+| flight.jpg | A separate disarmed Copter with the verified takeoff/hold/RTL/Land mission; instruments, contextual controls and Alerts panel |
+| geofence-proposal.jpg | Actual qwen3.5:397b response to an attached map, showing a purple proposal before acceptance |
+| settings.jpg | Isolated test settings: vision model, 300 s periodic cadence, 60 s watch spacing, automatic inference paused |
+| diagnostics.jpg | Failure controls and trial conditions; no injected fault in this capture |
 
-The Copter flew a reviewed home-position mission to 20 m, deliberately crossing
-a 15 m test ceiling. A real cloud assessment followed the trigger in 4.215 s,
-while the regular interval was one hour. The model initially produced zero
-coordinate placeholders; these were corrected to reported home before review
-and upload. The operator also entered the requested concern notes. The AGL watch
-had no valid source in the default simulator and showed unavailable in flight.
-Plane and Rover stayed disarmed. See [validation](../watch-validation.json).
+These are direct 1796 × 1043 JPEG browser captures. Model output and telemetry
+are real; none were fabricated. Imagery attribution is retained. Coordinates
+are the Canberra simulator site. Captures contain no API key.
 
-These are direct 1796 × 1043 JPEG browser captures. No model output or telemetry
-was fabricated. Map attribution is retained; coordinates are the Canberra SITL
-site. Screenshots contain no API key. They demonstrate workflow and monitoring,
-not propeller diagnosis, obstacle clearance or physical-flight validation.
-The separate user installation's saved inference preferences were preserved.
+The vision proposal took 57.9 s and preserved two existing areas while adding
+an approximate runway boundary. Acceptance changed the local draft but left the
+onboard bank unchanged. The boundary is not certified or a clearance guarantee.
+The four-item mission verified Land's default direction normalization while
+disarmed. No new flight or fence-breach test is implied by these images.
+See [validation](../geofence-validation.json).
+
+The user's saved model, prompts and monitoring preferences were preserved;
+qwen3.5 was selected only in the isolated test installation.
 
 ## Refresh procedure
 
@@ -55,6 +56,10 @@ The separate user installation's saved inference preferences were preserved.
 ### Flight
 
 ![Flight view](flight.jpg)
+
+### Vision proposal
+
+![Actual model proposal](geofence-proposal.jpg)
 
 ### Mission planning
 

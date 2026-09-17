@@ -3,11 +3,12 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { api } from "./api";
 import { SettingsPanel } from "./SettingsPanel";
-import { AttitudeIndicator } from "./AttitudeIndicator";
+import { FlightDeck } from "./FlightDeck";
+import { AlertsPanel } from "./AlertsPanel";
 import { FencePanel } from "./FencePanel";
 import { WatchPanel } from "./WatchPanel";
 import { MissionWorkflow } from "./MissionWorkflow";
-import { missionProgress, taskStarters, uploadReason } from "./missionFlow.mjs";
+import { taskStarters } from "./missionFlow.mjs";
 import { registerGroundStationTools } from "./webmcp";
 import * as maplibregl from "maplibre-gl";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
@@ -17,13 +18,11 @@ import {
   FileText,
   FlaskConical,
   Settings,
-  ChevronRight,
   Send,
   Plus,
   Undo2,
   Upload,
   ShieldCheck,
-  Navigation,
   Radio,
   Play,
   Square,
@@ -86,6 +85,9 @@ function MapView({
   setSelected,
   home,
   historical,
+  onSaveAreas,
+  proposal,
+  captureRef,
 }: Json) {
   const el = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map>(null),
@@ -93,6 +95,9 @@ function MapView({
     vehicleMarkers = useRef<Record<string, maplibregl.Marker>>({}),
     cueMarkers = useRef<Record<string, maplibregl.Marker>>({}),
     centered = useRef(false);
+  const [areaEdit, setAreaEdit] = useState<Json>(null),
+    [areaBusy, setAreaBusy] = useState(false),
+    [areaError, setAreaError] = useState("");
   const props = useRef<Json>({});
   props.current = {
     vehicle,
@@ -102,6 +107,8 @@ function MapView({
     onMove,
     setSelected,
     onSelectVehicle,
+    areaEdit,
+    areaBusy,
   };
   const renderMap = useRef<() => void>(() => {});
   const [sat, setSat] = useState(true),
@@ -111,6 +118,7 @@ function MapView({
       container: el.current!,
       center: [home.lon, home.lat],
       zoom: 16,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
       attributionControl: { compact: true },
       style: {
         version: 8,
@@ -149,7 +157,12 @@ function MapView({
       "bottom-left",
     );
     m.on("click", (e) => {
-      if (props.current.editing)
+      if (props.current.areaEdit && !props.current.areaBusy) {
+        setAreaEdit((a: Json) => ({
+          ...a,
+          points: [...a.points, [e.lngLat.lng, e.lngLat.lat]],
+        }));
+      } else if (props.current.editing && !props.current.areaBusy)
         props.current.onAdd(e.lngLat.lat, e.lngLat.lng);
     });
     m.on("error", () =>
@@ -161,6 +174,46 @@ function MapView({
       m.addSource("route", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
+      });
+      m.addSource("areas", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addLayer({
+        id: "area-fill",
+        type: "fill",
+        source: "areas",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "kind"],
+            "proposal",
+            "#c69bff",
+            "onboard",
+            "#ffc46d",
+            "#ff6d65",
+          ],
+          "fill-opacity": 0.24,
+        },
+      });
+      m.addLayer({
+        id: "area-outline",
+        type: "line",
+        source: "areas",
+        paint: {
+          "line-color": [
+            "match",
+            ["get", "kind"],
+            "proposal",
+            "#c69bff",
+            "onboard",
+            "#ffc46d",
+            "#ff6d65",
+          ],
+          "line-width": 3,
+          "line-dasharray": [3, 1],
+        },
       });
       m.addLayer({
         id: "exclusions",
@@ -262,12 +315,33 @@ function MapView({
           coordinates: historical.points.map((p: Json) => [p.lon, p.lat]),
         },
       });
-    for (const ring of draft?.intent?.exclusions || [])
-      features.push({
+    const areas: Json[] = [];
+    const addArea = (ring: Json, kind: string) => {
+      if (ring.length < 2) return;
+      areas.push({
         type: "Feature",
-        properties: { kind: "exclusion" },
-        geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
+        properties: { kind },
+        geometry:
+          ring.length > 2
+            ? { type: "Polygon", coordinates: [[...ring, ring[0]]] }
+            : { type: "LineString", coordinates: ring },
       });
+    };
+    (draft?.intent?.exclusions || []).forEach((ring: Json, i: number) => {
+      if (areaEdit?.index !== i) addArea(ring, "draft");
+    });
+    (proposal?.polygons || []).forEach((ring: Json) =>
+      addArea(ring, "proposal"),
+    );
+    if (vehicle?.fence?.enabled && vehicle.fence.polygon)
+      (vehicle.fence.polygons || []).forEach((ring: Json) =>
+        addArea(ring, "onboard"),
+      );
+    if (areaEdit) addArea(areaEdit.points, "drawing");
+    (m.getSource("areas") as maplibregl.GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: areas,
+    });
     if (
       vehicle?.home &&
       vehicle?.fence?.enabled &&
@@ -325,7 +399,10 @@ function MapView({
         e.stopPropagation();
         setSelected(w.id);
       };
-      const marker = new maplibregl.Marker({ element: b, draggable: editing })
+      const marker = new maplibregl.Marker({
+        element: b,
+        draggable: editing && !areaEdit && !areaBusy,
+      })
         .setLngLat([w.lon, w.lat])
         .addTo(m);
       marker.on("dragend", () => {
@@ -334,6 +411,29 @@ function MapView({
       });
       markers.current.push(marker);
     }
+    (areaEdit?.points || []).forEach((point: Json, index: number) => {
+      const element = document.createElement("button");
+      element.className = "area-vertex";
+      element.textContent = String(index + 1);
+      element.title = `Boundary vertex ${index + 1} · drag to adjust`;
+      element.onclick = (e) => e.stopPropagation();
+      const marker = new maplibregl.Marker({ element, draggable: !areaBusy })
+        .setLngLat(point)
+        .addTo(m);
+      marker.on("dragend", () => {
+        const p = marker.getLngLat();
+        setAreaEdit(
+          (a: Json) =>
+            a && {
+              ...a,
+              points: a.points.map((q: Json, i: number) =>
+                i === index ? [p.lng, p.lat] : q,
+              ),
+            },
+        );
+      });
+      markers.current.push(marker);
+    });
     updateVehicle();
   };
   const visibleVehicles = historical
@@ -460,7 +560,90 @@ function MapView({
     editing,
     selected,
     historical,
+    areaEdit,
+    areaBusy,
+    proposal,
+    JSON.stringify(vehicle?.fence?.polygons),
+    vehicle?.fence?.polygon,
   ]);
+  useEffect(() => {
+    if (!editing) setAreaEdit(null);
+    map.current
+      ?.getCanvas()
+      .style.setProperty("cursor", areaEdit ? "crosshair" : "");
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !areaBusy) {
+        setAreaEdit(null);
+        setAreaError("");
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [editing, areaEdit, areaBusy]);
+  useEffect(() => {
+    if (!captureRef) return;
+    captureRef.current = async () => {
+      const m = map.current;
+      if (!m || !m.loaded() || areaEdit)
+        throw Error("Finish drawing and wait for map tiles before attaching.");
+      m.jumpTo({ bearing: 0, pitch: 0 });
+      await new Promise<void>((resolve) => {
+        m.once("render", () => resolve());
+        m.triggerRepaint();
+      });
+      const source = m.getCanvas(),
+        canvas = document.createElement("canvas");
+      const scale = Math.min(1, 1280 / source.width, 1280 / source.height);
+      canvas.width = Math.round(source.width * scale);
+      canvas.height = Math.round(source.height * scale);
+      const context = canvas.getContext("2d")!;
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      // Pixel grid gives vision models explicit image-space reference points.
+      context.font = "12px monospace";
+      for (let x = 0; x < canvas.width; x += 100)
+        for (let y = 0; y < canvas.height; y += 100) {
+          context.fillStyle = "#14202bcc";
+          context.fillRect(x, y, 76, 18);
+          context.fillStyle = "#ffffff";
+          context.fillText(`${x},${y}`, x + 3, y + 13);
+        }
+      context.fillStyle = "#14202bee";
+      context.fillRect(0, canvas.height - 22, canvas.width, 22);
+      context.fillStyle = "#ffffff";
+      context.fillText(
+        sat
+          ? "Imagery © Esri, Maxar, Earthstar Geographics"
+          : "© OpenStreetMap contributors",
+        8,
+        canvas.height - 7,
+      );
+      const b = m.getBounds();
+      return {
+        vehicle_id: vehicle.id,
+        draft_revision: draft.revision,
+        captured_at: Date.now() / 1000,
+        image: canvas.toDataURL("image/png"),
+        width: canvas.width,
+        height: canvas.height,
+        bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      };
+    };
+    return () => {
+      captureRef.current = null;
+    };
+  }, [captureRef, vehicle?.id, draft?.revision, areaEdit, sat]);
+  const saveAreas = async (areas: Json, revision: number) => {
+    setAreaBusy(true);
+    setAreaError("");
+    try {
+      await onSaveAreas(areas, revision);
+      setAreaEdit(null);
+    } catch (e: any) {
+      setAreaError(e.message);
+    } finally {
+      setAreaBusy(false);
+    }
+  };
   useEffect(updateVehicle, [vehicles, vehicle, historical]);
   useEffect(() => {
     const m = map.current;
@@ -478,10 +661,28 @@ function MapView({
           {historical
             ? "HISTORICAL REPLAY"
             : editing
-              ? "MISSION EDITOR · CLICK TO ADD"
+              ? areaEdit
+                ? "EXCLUSION AREA · CLICK CORNERS"
+                : "MISSION EDITOR · CLICK TO ADD"
               : "LIVE OPERATIONS"}
         </span>
         <div className="map-buttons">
+          {editing && draft && (
+            <button
+              className={areaEdit ? "active" : ""}
+              disabled={areaBusy || !!areaEdit}
+              onClick={() => {
+                setAreaEdit({
+                  index: -1,
+                  points: [],
+                  revision: draft.revision,
+                });
+                setAreaError("");
+              }}
+            >
+              Draw exclusion area
+            </button>
+          )}
           <button onClick={() => setSat(!sat)} title="Switch basemap">
             {sat ? <Satellite size={16} /> : <Layers size={16} />}{" "}
             {sat ? "Satellite" : "Street"}
@@ -518,6 +719,125 @@ function MapView({
         </div>
       </div>
       {mapError && <div className="map-error">{mapError}</div>}
+      {editing &&
+        (areaEdit || draft?.intent?.exclusions?.length > 0 || areaError) && (
+          <div className="map-area-tools">
+            {areaEdit ? (
+              <>
+                <strong>
+                  {areaEdit.index < 0
+                    ? "Draw exclusion area"
+                    : `Edit area ${areaEdit.index + 1}`}{" "}
+                  · {areaEdit.points.length} vertices
+                </strong>
+                <span>
+                  Click corners; drag a vertex to adjust. Finish closes the
+                  boundary.
+                </span>
+                {areaEdit.revision !== draft?.revision && (
+                  <span className="error">
+                    Draft changed. Cancel and start again.
+                  </span>
+                )}
+                <div className="button-row">
+                  <button
+                    className="primary"
+                    disabled={
+                      areaBusy ||
+                      areaEdit.points.length < 3 ||
+                      areaEdit.revision !== draft?.revision
+                    }
+                    onClick={() => {
+                      const rings = [...draft.intent.exclusions];
+                      if (areaEdit.index < 0) rings.push(areaEdit.points);
+                      else rings[areaEdit.index] = areaEdit.points;
+                      void saveAreas(rings, areaEdit.revision);
+                    }}
+                  >
+                    {areaBusy ? "Saving…" : "Finish area"}
+                  </button>
+                  <button
+                    disabled={areaBusy || !areaEdit.points.length}
+                    onClick={() =>
+                      setAreaEdit({
+                        ...areaEdit,
+                        points: areaEdit.points.slice(0, -1),
+                      })
+                    }
+                  >
+                    Undo vertex
+                  </button>
+                  <button
+                    disabled={areaBusy}
+                    onClick={() => {
+                      setAreaEdit(null);
+                      setAreaError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <details className="area-manager">
+                <summary>
+                  Manage areas · {draft?.intent?.exclusions?.length || 0} in
+                  draft
+                </summary>
+                <div className="area-list">
+                  {(draft?.intent?.exclusions || []).map(
+                    (ring: Json, index: number) => (
+                      <div key={index}>
+                        <button
+                          disabled={areaBusy}
+                          onClick={() => {
+                            const bounds = new maplibregl.LngLatBounds();
+                            ring.forEach((p: Json) => bounds.extend(p));
+                            map.current?.fitBounds(bounds, {
+                              padding: 60,
+                              maxZoom: 19,
+                            });
+                            setAreaEdit({
+                              index,
+                              points: ring.map((p: Json) => [...p]),
+                              revision: draft.revision,
+                            });
+                            setAreaError("");
+                          }}
+                        >
+                          Edit area {index + 1} · {ring.length} corners
+                        </button>
+                        <button
+                          disabled={areaBusy}
+                          aria-label={`Remove area ${index + 1}`}
+                          onClick={() =>
+                            void saveAreas(
+                              draft.intent.exclusions.filter(
+                                (_: Json, i: number) => i !== index,
+                              ),
+                              draft.revision,
+                            )
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ),
+                  )}
+                </div>
+                <span>
+                  Red: draft · Purple: AI proposal · Amber: onboard snapshot.
+                  Upload fences below.
+                </span>
+              </details>
+            )}
+            {areaError && (
+              <span role="alert" className="error">
+                {areaError}
+              </span>
+            )}
+          </div>
+        )}
       <div className="map-position">
         {(historical
           ? historical.snapshot?.position_valid
@@ -553,9 +873,11 @@ function MapView({
         </div>
       )}
       <div className="map-note">
-        {editing
-          ? "Drag a waypoint to revise the draft."
-          : "Imagery is not obstacle sensing."}
+        {areaEdit
+          ? "Drawing changes the local draft only."
+          : editing
+            ? "Drag a waypoint to revise the draft."
+            : "Imagery is not obstacle sensing."}
       </div>
     </div>
   );
@@ -565,7 +887,8 @@ function App() {
   const [config, setConfig] = useState<Json>(null),
     [vehicles, setVehicles] = useState<Json[]>([]),
     [vid, setVid] = useState(""),
-    [tab, setTab] = useState("plan");
+    [tab, setTab] = useState("flight");
+  const [sidePanel, setSidePanel] = useState("chat");
   const [wsState, setWsState] = useState(false),
     [work, setWorkState] = useState<Json>(null),
     [error, setError] = useState(""),
@@ -593,11 +916,11 @@ function App() {
     [seed, setSeed] = useState(1),
     [track, setTrack] = useState("telemetry");
   const [control, setControl] = useState(false),
-    [mode, setMode] = useState(""),
-    [takeoffAlt, setTakeoffAlt] = useState(20),
     [logEntries, setLogEntries] = useState<Json[]>([]);
   const [evidence, setEvidence] = useState<Json>(null);
   const chatInput = useRef<HTMLTextAreaElement>(null);
+  const captureMap = useRef<null | (() => Promise<Json>)>(null);
+  const [mapAttachment, setMapAttachment] = useState<Json>(null);
   const selectedVehicleRef = useRef(vid);
   selectedVehicleRef.current = vid;
   const setWork = (data: Json) => {
@@ -712,12 +1035,12 @@ function App() {
   }, [vehicles]);
   useEffect(() => {
     setWork(null);
+    setMapAttachment(null);
     setInteractionTargets(vid ? [vid] : []);
     setParams(null);
     setStaged({});
     setSelected("");
     setControl(false);
-    setMode("");
     setReplay(null);
     setReplayId("");
     setLogEntries([]);
@@ -823,6 +1146,7 @@ function App() {
       setNotice(
         "Numerical review attached. Requesting the copilot's plan assessment…",
       );
+      setSidePanel("chat");
       setChatBusy(true);
       try {
         setWork(
@@ -837,6 +1161,7 @@ function App() {
       }
     }, "review");
   const describeTask = (text?: string) => {
+    setSidePanel("chat");
     setTab("plan");
     setReplay(null);
     setInteractionMode(true);
@@ -863,8 +1188,9 @@ function App() {
         request_id: crypto.randomUUID(),
       });
       await waitJob(j.id);
+      setTab("flight");
       setNotice(
-        `Mission version ${draft.revision} uploaded and verified. Open Operate to arm and start.`,
+        `Mission version ${draft.revision} uploaded and verified. Use Flight controls to prepare, arm and start.`,
       );
     }, "upload");
   const sendChat = () => {
@@ -892,7 +1218,9 @@ function App() {
           message: text,
           enabled: true,
           targets,
+          map_image: mapAttachment,
         });
+        setMapAttachment(null);
         result.workspaces.forEach(setWork);
       } else
         await api(`/vehicles/${vid}/chat`, "POST", {
@@ -927,6 +1255,18 @@ function App() {
         await api(`/vehicles/${vid}/evidence/${encodeURIComponent(id)}`),
       ),
     );
+  const alertCount =
+    (current?.rules || []).filter((r: Json) =>
+      ["critical", "warning"].includes(r.severity),
+    ).length +
+    (current?.watches?.rules || []).filter(
+      (r: Json) => r.latched || r.state === "triggered",
+    ).length +
+    (!current?.assessment_stale
+      ? (current?.assessment?.incidents || []).filter((i: Json) =>
+          ["warning", "critical"].includes(i.severity),
+        ).length
+      : 0);
   if (!config)
     return (
       <div className="loading">
@@ -945,7 +1285,6 @@ function App() {
             <strong>
               COPILOT <span>GCS</span>
             </strong>
-            <small>AI-ENABLED GROUND CONTROL</small>
           </div>
         </div>
         <div className="header-center">
@@ -959,7 +1298,7 @@ function App() {
               ? current.owned
                 ? "SIMULATION"
                 : "TELEMETRY CONNECTION"
-              : "BUILT FOR ARDUPILOT"}
+              : "NO VEHICLE CONNECTED"}
           </span>
         </div>
         <button onClick={() => setTab("settings")} className="model-chip">
@@ -971,8 +1310,7 @@ function App() {
       <div className="body">
         <nav className="rail">
           {[
-            ["plan", MapIcon, "Plan"],
-            ["flight", Navigation, "Operate"],
+            ["flight", MapIcon, "Flight"],
             ["parameters", SlidersHorizontal, "Parameters"],
             ["logs", FileText, "Logs"],
             ["lab", FlaskConical, "Diagnostics"],
@@ -980,7 +1318,11 @@ function App() {
           ].map(([id, Icon, label]: any) => (
             <button
               key={id}
-              className={tab === id ? "active" : ""}
+              className={
+                tab === id || (id === "flight" && tab === "plan")
+                  ? "active"
+                  : ""
+              }
               title={label}
               onClick={() => {
                 setTab(id);
@@ -1104,9 +1446,6 @@ function App() {
                       </label>
                     ))}
                   </div>
-                  <small>
-                    Copilot prepares changes. You review and apply them.
-                  </small>
                 </>
               ) : (
                 <small>
@@ -1209,13 +1548,13 @@ function App() {
                 <Sparkles size={30} />
               </div>
               <span className="eyebrow">COPILOT GCS</span>
-              <h1>What do you want your drone to do?</h1>
+              <h1>Connect a vehicle</h1>
               <p>
-                Turn a simple task into a mission with AI. Describe a flight or
-                inspection, review the plan on the map, then put it to work.
+                Start a simulation, or connect an existing vehicle for
+                telemetry.
               </p>
               <div className="task-brief">
-                <label htmlFor="task-brief">Describe your task</label>
+                <label htmlFor="task-brief">Mission brief (optional)</label>
                 <textarea
                   id="task-brief"
                   ref={chatInput}
@@ -1257,7 +1596,7 @@ function App() {
                     disabled={busy === "launch"}
                   >
                     <Play size={16} />
-                    {busy === "launch" ? "Starting…" : "Continue in simulation"}
+                    {busy === "launch" ? "Starting…" : "Start simulation"}
                   </button>
                   <button onClick={() => setTab("settings")}>
                     <Radio size={16} />
@@ -1269,15 +1608,7 @@ function App() {
                   makes no AI request.
                 </small>
               </div>
-              <div className="welcome-steps">
-                <span>1. Describe</span>
-                <ChevronRight size={14} />
-                <span>2. Review</span>
-                <ChevronRight size={14} />
-                <span>3. Upload</span>
-                <ChevronRight size={14} />
-                <span>4. Operate</span>
-              </div>
+
               <small>
                 Current release: control simulated vehicles; connect external
                 telemetry for monitoring.
@@ -1286,6 +1617,23 @@ function App() {
           )}
           {current && tab !== "settings" && (
             <div className="workspace">
+              {["flight", "plan"].includes(tab) && (
+                <FlightDeck
+                  key={vid}
+                  vehicle={current}
+                  workspace={work}
+                  control={control}
+                  busy={!!busy}
+                  modes={profile?.modes || []}
+                  onControl={claimControl}
+                  onPlan={() => setTab("plan")}
+                  alertCount={alertCount}
+                  onAlerts={() => setSidePanel("alerts")}
+                  onAction={(action: string, args: Json) =>
+                    guard(() => runAction(action, args), "vehicle action")
+                  }
+                />
+              )}
               <section className="content">
                 {["flight", "plan"].includes(tab) && (
                   <>
@@ -1297,7 +1645,8 @@ function App() {
                       onDescribe={() => describeTask()}
                       onReview={review}
                       onUpload={uploadMission}
-                      onOperate={() => setTab("flight")}
+                      view={tab}
+                      onView={setTab}
                       onClaimControl={claimControl}
                       onRefreshChecks={refreshChecks}
                     />
@@ -1316,172 +1665,21 @@ function App() {
                       selected={selected}
                       setSelected={setSelected}
                       home={config.home}
+                      captureRef={captureMap}
+                      proposal={work?.exclusion_proposal}
+                      onSaveAreas={async (areas: Json, revision: number) => {
+                        setWork(
+                          await api(`/vehicles/${vid}/draft`, "PUT", {
+                            expected_revision: revision,
+                            draft: {
+                              ...draft,
+                              intent: { ...draft.intent, exclusions: areas },
+                            },
+                          }),
+                        );
+                      }}
                     />
-                    {tab === "flight" ? (
-                      <div className="flight-bottom">
-                        <AttitudeIndicator vehicle={current} />
-                        <div className="section-title">
-                          <h2>Vehicle controls</h2>
-                          <span>
-                            {current.owned
-                              ? "Owned simulator"
-                              : "Read-only connection"}
-                          </span>
-                        </div>
-                        <p className="control-help">
-                          Enable vehicle controls reserves this vehicle for this
-                          browser for 30 seconds, renewed while open. It does
-                          not arm or start it.
-                        </p>
-                        <p className="control-help">
-                          To run a mission: review and upload in Plan → set{" "}
-                          {current.profile === "copter"
-                            ? "GUIDED"
-                            : current.profile === "plane"
-                              ? "FBWA"
-                              : "HOLD"}{" "}
-                          → Arm → Start mission.{" "}
-                          {current.profile !== "rover" &&
-                            "A ground-start mission needs a Takeoff item first."}{" "}
-                          Native prearm checks still apply; inspect status
-                          messages if refused.
-                        </p>
-                        <div className="controls">
-                          <button
-                            className={control ? "claimed" : "primary"}
-                            disabled={!current.owned}
-                            onClick={claimControl}
-                          >
-                            <Radio size={15} />
-                            {control
-                              ? "Control held"
-                              : "Enable vehicle controls"}
-                          </button>
-                          <select
-                            aria-label="Flight mode"
-                            value={mode}
-                            onChange={(e) => setMode(e.target.value)}
-                          >
-                            <option value="">Select mode</option>
-                            {profile?.modes.map((m: string) => (
-                              <option key={m}>{m}</option>
-                            ))}
-                          </select>
-                          <button
-                            disabled={!control || !mode}
-                            onClick={() =>
-                              guard(() => runAction("mode", { mode }))
-                            }
-                          >
-                            Set mode
-                          </button>
-                          <button
-                            disabled={!control}
-                            className={current.armed ? "" : "arm"}
-                            onClick={() =>
-                              guard(() =>
-                                runAction("arm", { armed: !current.armed }),
-                              )
-                            }
-                          >
-                            {current.armed ? (
-                              <Square size={14} />
-                            ) : (
-                              <Play size={14} />
-                            )}{" "}
-                            {current.armed ? "Disarm" : "Arm"}
-                          </button>
-                          {current.profile === "copter" && (
-                            <>
-                              <input
-                                aria-label="Takeoff altitude"
-                                type="number"
-                                min="1"
-                                max="120"
-                                value={takeoffAlt}
-                                onChange={(e) => setTakeoffAlt(+e.target.value)}
-                              />
-                              <button
-                                disabled={
-                                  !control ||
-                                  !current.armed ||
-                                  current.mode !== "GUIDED"
-                                }
-                                onClick={() =>
-                                  guard(() =>
-                                    runAction("takeoff", { alt: takeoffAlt }),
-                                  )
-                                }
-                              >
-                                Take off
-                              </button>
-                            </>
-                          )}
-                          <button
-                            disabled={!control}
-                            onClick={() =>
-                              guard(() =>
-                                runAction("mode", {
-                                  mode:
-                                    current.profile === "rover"
-                                      ? "HOLD"
-                                      : "RTL",
-                                }),
-                              )
-                            }
-                          >
-                            {current.profile === "rover"
-                              ? "Hold"
-                              : "Return home"}
-                          </button>
-                        </div>
-                        <button
-                          className="primary"
-                          disabled={
-                            !control ||
-                            !current.armed ||
-                            !work?.active ||
-                            !!busy
-                          }
-                          onClick={() => guard(() => runAction("start"))}
-                        >
-                          <Play size={14} /> Start mission
-                        </button>
-                        {!work?.active && (
-                          <small>
-                            Upload and verify a mission first. Arming and
-                            starting are separate actions.
-                          </small>
-                        )}
-                        <div className="rule-grid">
-                          {current.rules.length ? (
-                            current.rules.map((r: Json) => (
-                              <div
-                                key={r.code}
-                                className={"rule " + r.severity}
-                              >
-                                <AlertTriangle size={15} />
-                                <div>
-                                  <strong>{r.code.replaceAll("_", " ")}</strong>
-                                  <p>{r.text}</p>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="rule info">
-                              <ShieldCheck size={20} />
-                              <div>
-                                <strong>No deterministic alerts</strong>
-                                <p>
-                                  Only configured checks are covered. See
-                                  telemetry freshness and AI assessment.
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
+                    {tab === "plan" && (
                       <div className="mission-editor">
                         <div className="section-title">
                           <h2>
@@ -1551,12 +1749,58 @@ function App() {
                                 }}
                               />
                             </label>
-                            <button className="primary" onClick={review}>
+                            <button
+                              disabled={
+                                !draft?.waypoints.length &&
+                                !draft?.intent?.exclusions?.length
+                              }
+                              onClick={() =>
+                                guard(() =>
+                                  save({ ...draft, waypoints: [], intent: {} }),
+                                )
+                              }
+                            >
+                              Clear draft
+                            </button>
+                            <button onClick={review}>
                               <ShieldCheck size={15} />
-                              Review plan
+                              Ask AI to review
                             </button>
                           </div>
                         </div>
+                        {work?.checks && draft?.waypoints.length > 0 && (
+                          <details
+                            className="plan-checks"
+                            open={work.checks.findings.some(
+                              (f: Json) => f.severity === "error",
+                            )}
+                          >
+                            <summary>
+                              Mission checks ·{" "}
+                              {
+                                work.checks.findings.filter(
+                                  (f: Json) => f.severity === "error",
+                                ).length
+                              }{" "}
+                              blockers · {draft.waypoints.length} items
+                            </summary>
+                            {work.checks.findings.map((f: Json, i: number) => (
+                              <button
+                                className={"finding " + f.severity}
+                                key={i}
+                                onClick={() =>
+                                  f.waypoint && setSelected(f.waypoint)
+                                }
+                              >
+                                {f.text}
+                              </button>
+                            ))}
+                            <small>
+                              Numerical checks run on this draft. Unavailable
+                              checks remain unknown.
+                            </small>
+                          </details>
+                        )}
                         <p className="editor-help">
                           Set each waypoint's <b>Altitude m</b> below, then
                           choose <b>Relative home</b> or <b>AMSL</b>. Press
@@ -1717,11 +1961,12 @@ function App() {
                         <FencePanel
                           key={vid}
                           vehicle={current}
+                          draft={draft}
                           control={control}
                           onClaim={claimControl}
                           onChanged={() =>
                             setNotice(
-                              "Onboard fence verified. Use Fit all / zoom out to see the amber circle.",
+                              "Onboard fence verified. Refresh mission checks before upload.",
                             )
                           }
                         />
@@ -2267,7 +2512,7 @@ function App() {
                 {tab === "lab" && (
                   <div className="page lab">
                     <span className="eyebrow">SIMULATION DIAGNOSTICS</span>
-                    <h1>Practice handling the unexpected.</h1>
+                    <h1>Simulation diagnostics</h1>
                     <p>
                       Try a failure scenario in this simulated vehicle and see
                       how Copilot explains the telemetry. The injected fault is
@@ -2490,102 +2735,82 @@ function App() {
                     )}
                   </button>
                 </div>
-                <WatchPanel
-                  key={vid}
-                  vehicle={current}
-                  metrics={config.watch_metrics}
-                  onSaved={(data: Json) => {
-                    setWork(data);
-                    setVehicles((items: Json[]) =>
-                      items.map((v) =>
-                        v.id === data.vehicle_id
-                          ? { ...v, watches: data.watches }
-                          : v,
-                      ),
-                    );
-                  }}
-                  onSettings={() => setTab("settings")}
-                  onAsk={() => {
-                    setInteractionMode(true);
-                    setInteractionTargets([vid]);
-                    setChat(
-                      "Help me set up watch rules for this vehicle. Ask me for the concerns, numerical thresholds and flight phases to watch. Alert and advise only; I choose vehicle actions.",
-                    );
-                    chatInput.current?.focus();
-                  }}
-                />
-                <div className="conversation">
-                  {current.recording_error && (
-                    <div className="persistent-alert critical">
-                      {current.recording_error}
-                    </div>
-                  )}
-                  {current.rules
-                    .filter(
-                      (r: Json) =>
-                        r.severity === "critical" || r.severity === "warning",
-                    )
-                    .map((r: Json) => (
-                      <div
-                        key={r.code}
-                        className={"persistent-alert " + r.severity}
-                      >
-                        <AlertTriangle size={14} />
-                        <span>{r.text}</span>
-                      </div>
-                    ))}
-                  {current.assessment && (
-                    <div
-                      className={
-                        "assessment " +
-                        (current.assessment_stale
-                          ? "insufficient_data"
-                          : current.assessment.status)
-                      }
-                    >
-                      <div className="card-kicker">
-                        {current.assessment_stale
-                          ? "STALE ASSESSMENT · NOT CURRENT"
-                          : "CONTINUOUS ASSESSMENT"}{" "}
-                        <span>{clock(current.assessment.completed_at)}</span>
-                      </div>
-                      <p>{current.assessment.summary}</p>
-                      {current.assessment.incidents.map(
-                        (i: Json, n: number) => (
-                          <div className={"incident " + i.severity} key={n}>
-                            <strong>{i.summary}</strong>
-                            <p>{i.recommendation}</p>
-                            <div className="evidence-links">
-                              {i.evidence.map((id: string, k: number) => (
-                                <button
-                                  key={id}
-                                  onClick={() => openEvidence(id)}
-                                >
-                                  Evidence {k + 1}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                <div className="copilot-tabs" aria-label="Copilot panels">
+                  <button
+                    className={sidePanel === "chat" ? "active" : ""}
+                    onClick={() => setSidePanel("chat")}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    className={
+                      (sidePanel === "alerts" ? "active " : "") +
+                      (alertCount ? "has-alert" : "")
+                    }
+                    onClick={() => setSidePanel("alerts")}
+                  >
+                    Alerts {alertCount > 0 && <b>{alertCount}</b>}
+                  </button>
+                  <button
+                    className={sidePanel === "watches" ? "active" : ""}
+                    onClick={() => setSidePanel("watches")}
+                  >
+                    Watch rules <b>{current.watches?.rules?.length || 0}</b>
+                  </button>
+                </div>
+                {sidePanel === "alerts" && (
+                  <AlertsPanel
+                    vehicle={current}
+                    onWatches={() => setSidePanel("watches")}
+                    onEvidence={openEvidence}
+                  />
+                )}
+                <div
+                  className={
+                    "watches-pane" +
+                    (sidePanel !== "watches" ? " panel-hidden" : "")
+                  }
+                >
+                  <WatchPanel
+                    expanded
+                    key={vid}
+                    vehicle={current}
+                    metrics={config.watch_metrics}
+                    onSaved={(data: Json) => {
+                      setWork(data);
+                      setVehicles((items: Json[]) =>
+                        items.map((v) =>
+                          v.id === data.vehicle_id
+                            ? { ...v, watches: data.watches }
+                            : v,
                         ),
-                      )}
-                      <small>
-                        Data age{" "}
-                        {fmt(
-                          Date.now() / 1000 - current.assessment.observed_at,
-                          0,
-                        )}{" "}
-                        s · {current.assessment.track} · advisory
-                      </small>
-                    </div>
-                  )}
-                  {!work?.chat.length && !current.assessment && (
+                      );
+                    }}
+                    onSettings={() => setTab("settings")}
+                    onAsk={() => {
+                      setSidePanel("chat");
+                      setInteractionMode(true);
+                      setInteractionTargets([vid]);
+                      setChat(
+                        "Help me set up watch rules for this vehicle. Ask me for the concerns, numerical thresholds and flight phases to watch. Alert and advise only; I choose vehicle actions.",
+                      );
+                      chatInput.current?.focus();
+                    }}
+                  />
+                </div>
+                <div
+                  className={
+                    "conversation" +
+                    (sidePanel !== "chat" ? " panel-hidden" : "")
+                  }
+                >
+                  {!work?.chat.length && (
                     <div className="copilot-intro">
                       <MessageSquare size={24} />
-                      <h3>Let's plan your next task.</h3>
+                      <h3>Copilot</h3>
                       <p>
-                        Describe a waypoint flight or inspection. I'll help
-                        prepare the mission, explain the steps and revise it
-                        with you.
+                        Ask about telemetry, describe a mission, or configure
+                        watch rules.
                       </p>
                       <div className="task-starters vertical">
                         {taskStarters(current.profile).map((task) => (
@@ -2656,6 +2881,60 @@ function App() {
                       )}
                     </div>
                   ))}
+                  {work?.exclusion_proposal && (
+                    <div className="area-proposal">
+                      <strong>AI exclusion-area proposal</strong>
+                      <p>{work.exclusion_proposal.reason}</p>
+                      <p>
+                        Purple outlines preview{" "}
+                        {work.exclusion_proposal.polygons.length} areas. Accept
+                        replaces all {draft.intent.exclusions.length} draft
+                        areas. Onboard fences are unchanged until uploaded.
+                      </p>
+                      <div className="button-row">
+                        <button
+                          className="primary"
+                          disabled={
+                            work.exclusion_proposal.base_revision !==
+                              draft.revision ||
+                            work.exclusion_proposal.epoch !== current.epoch
+                          }
+                          onClick={() =>
+                            guard(async () => {
+                              setWork(
+                                await api(
+                                  `/vehicles/${vid}/exclusions/accept`,
+                                  "POST",
+                                  { proposal_id: work.exclusion_proposal.id },
+                                ),
+                              );
+                            })
+                          }
+                        >
+                          Accept areas
+                        </button>
+                        <button
+                          onClick={() =>
+                            guard(async () => {
+                              setWork(
+                                await api(
+                                  `/vehicles/${vid}/exclusions/dismiss`,
+                                  "POST",
+                                  { proposal_id: work.exclusion_proposal.id },
+                                ),
+                              );
+                            })
+                          }
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                      {work.exclusion_proposal.base_revision !==
+                        draft.revision && (
+                        <p>Draft changed; request a new proposal.</p>
+                      )}
+                    </div>
+                  )}
                   {work?.intent_proposal && (
                     <div className="review-card">
                       <div className="card-kicker">
@@ -2685,113 +2964,6 @@ function App() {
                         Activates for monitoring only when this draft is
                         uploaded and verified.
                       </small>
-                    </div>
-                  )}
-                  {work?.checks && draft?.waypoints.length > 0 && (
-                    <div className="review-card">
-                      <div className="card-kicker">
-                        PLAN REVIEW <span>VERSION {draft.revision}</span>
-                      </div>
-                      <h3>
-                        {work.review ? "Review complete" : "Draft checks"}
-                      </h3>
-                      <div className="review-stats">
-                        <span>{draft.waypoints.length} items</span>
-                        <span>
-                          {fmt(work.checks.distance_m / 1000, 2)} km route
-                        </span>
-                        <span>
-                          {
-                            work.checks.findings.filter(
-                              (f: Json) => f.severity === "error",
-                            ).length
-                          }{" "}
-                          blockers
-                        </span>
-                      </div>
-                      {work.checks.findings.map((f: Json, i: number) => (
-                        <button
-                          className={"finding " + f.severity}
-                          key={i}
-                          onClick={() => {
-                            if (f.waypoint) {
-                              setSelected(f.waypoint);
-                              setTab("plan");
-                            }
-                          }}
-                        >
-                          <span>
-                            {f.severity === "error"
-                              ? "!"
-                              : f.severity === "warning"
-                                ? "△"
-                                : "?"}
-                          </span>
-                          {f.text}
-                        </button>
-                      ))}
-                      <small>
-                        Reviewed means these checks ran. Unknowns are not safety
-                        assurances.
-                      </small>
-                      <button
-                        className="primary wide"
-                        disabled={
-                          !missionProgress(work, current).reviewed ||
-                          missionProgress(work, current).uploaded ||
-                          !current.owned ||
-                          !control ||
-                          current.armed ||
-                          !!busy ||
-                          chatBusy
-                        }
-                        onClick={uploadMission}
-                      >
-                        <Upload size={15} />
-                        {busy === "upload"
-                          ? "Uploading & verifying…"
-                          : missionProgress(work, current).uploaded
-                            ? `Uploaded & verified · version ${draft.revision}`
-                            : `Upload mission · version ${draft.revision}`}
-                      </button>
-                      <small className="upload-reason">
-                        {uploadReason(
-                          work,
-                          current,
-                          control,
-                          !!busy || chatBusy,
-                        )}
-                      </small>
-                      {!work.review && (
-                        <button className="wide" onClick={review}>
-                          Review plan
-                        </button>
-                      )}
-                      {!control && (
-                        <button className="wide" onClick={claimControl}>
-                          Enable vehicle controls
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {work?.active && (
-                    <div className="active-plan">
-                      <Check size={17} />
-                      <div>
-                        <strong>
-                          Onboard mission · version {work.active.revision}
-                        </strong>
-                        <span>
-                          Upload verified · intent pinned to this version
-                        </span>
-                        <button
-                          disabled={!control || !current.armed}
-                          onClick={() => guard(() => runAction("start"))}
-                        >
-                          <Play size={14} />
-                          Start mission
-                        </button>
-                      </div>
                     </div>
                   )}
                   {work?.parameter_proposals
@@ -2882,7 +3054,12 @@ function App() {
                   )}
                   <div ref={chatBottom} />
                 </div>
-                <div className="chat-compose">
+                <div
+                  className={
+                    "chat-compose" +
+                    (sidePanel !== "chat" ? " panel-hidden" : "")
+                  }
+                >
                   {!interactionMode && (
                     <label className="edit-toggle">
                       <input
@@ -2905,6 +3082,58 @@ function App() {
                         .join(", ") || "select a target above"}
                     </div>
                   )}
+                  {interactionMode && (
+                    <div className="map-attachment">
+                      {mapAttachment ? (
+                        <>
+                          <img
+                            src={mapAttachment.image}
+                            alt="Map image attached to the next Copilot message"
+                          />
+                          <span>
+                            Map attached · {mapAttachment.width} ×{" "}
+                            {mapAttachment.height}. Requires a vision model.
+                          </span>
+                          <button onClick={() => setMapAttachment(null)}>
+                            Remove image
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          disabled={
+                            chatBusy || !["plan", "flight"].includes(tab)
+                          }
+                          onClick={() =>
+                            guard(async () => {
+                              if (!captureMap.current)
+                                throw Error("Open Plan to attach the map.");
+                              setMapAttachment(await captureMap.current());
+                            })
+                          }
+                        >
+                          Attach map for vision model
+                        </button>
+                      )}
+                      <a
+                        href="/api/ai/capabilities"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        AI tool contract
+                      </a>
+                    </div>
+                  )}
+                  {(current.watches?.rules || []).some(
+                    (r: Json) => r.origin === "AI proposal" && !r.enabled,
+                  ) &&
+                    sidePanel === "chat" && (
+                      <button
+                        className="pending-watch-link"
+                        onClick={() => setSidePanel("watches")}
+                      >
+                        Review proposed watch rules →
+                      </button>
+                    )}
                   <div className="compose-box">
                     <textarea
                       ref={chatInput}
@@ -2938,10 +3167,9 @@ function App() {
                   <div className="chat-footer">
                     <span>
                       {interactionMode
-                        ? "Mission drafts + parameters + watch rules"
+                        ? "Drafts + areas + parameters + watches"
                         : "Local draft tools only"}
                     </span>
-                    <span>You approve vehicle actions</span>
                   </div>
                 </div>
               </aside>

@@ -35,7 +35,7 @@ export function uploadReason(workspace, vehicle, control, busy) {
   if (!workspace?.draft?.waypoints?.length)
     return "Add a mission before uploading.";
   if (missionProgress(workspace, vehicle).uploaded)
-    return "This version is already uploaded and verified. Open Operate for mission controls.";
+    return "Uploaded and verified. Use Flight controls to prepare, arm and start.";
   if (vehicle.armed) return "Disarm before uploading a mission.";
   if (!missionProgress(workspace, vehicle).reviewed)
     return workspace.review &&
@@ -110,4 +110,63 @@ export function taskStarters(profile = "copter") {
         "Help me create a local waypoint mission for this copter. Ask me for the route coordinates, altitude above home and how the mission should finish before editing. Do not invent locations. Explain the route in plain language.",
     },
   ];
+}
+
+export function flightAction(workspace, vehicle, control) {
+  if (!vehicle.owned)
+    return {
+      label: "Telemetry only",
+      help: "Vehicle writes are available for app-owned simulations.",
+    };
+  if (
+    vehicle.heartbeat_age == null ||
+    vehicle.heartbeat_age > 3 ||
+    workspace?.vehicle_id !== vehicle.id
+  )
+    return {
+      label: "Waiting for vehicle",
+      help: "Fresh telemetry and the selected workspace are required.",
+    };
+  if (!workspace.active)
+    return {
+      label: "Plan a mission",
+      help: "Create a draft, check it and upload before starting a mission.",
+      action: "plan",
+    };
+  if (!control)
+    return {
+      label: "Enable vehicle controls",
+      help: "Reserve control for this browser. This does not arm or start the vehicle.",
+      action: "control",
+    };
+  if (vehicle.armed && vehicle.mode === "AUTO")
+    return {
+      label: "Mission running",
+      help: "Follow the vehicle on the live map. Alerts and watch rules are in the right panel.",
+    };
+  const mode =
+    vehicle.profile === "copter"
+      ? "GUIDED"
+      : vehicle.profile === "plane"
+        ? "FBWA"
+        : "HOLD";
+  if (!vehicle.armed && vehicle.mode !== mode)
+    return {
+      label: `Prepare flight · ${mode}`,
+      help: "Set the launch mode. Arming remains a separate action.",
+      action: "mode",
+      args: { mode },
+    };
+  if (!vehicle.armed)
+    return {
+      label: "Arm vehicle",
+      help: "Mission verified. Check the launch area; arming starts the motors. Native arming checks apply.",
+      action: "arm",
+      args: { armed: true },
+    };
+  return {
+    label: "Start mission",
+    help: "Armed and ready. This starts the uploaded onboard mission in AUTO.",
+    action: "start",
+  };
 }

@@ -2,16 +2,17 @@
 
 # Copilot GCS
 
-**An AI-enabled ground control station for everyday drone tasks.** Describe a waypoint flight or inspection, refine the mission with Copilot, review it on the map, then upload and operate it. Built for ArduPilot **Copter, Plane and Rover**.
+A web ground control station for ArduPilot **Copter, Plane and Rover**, with an integrated AI chat.
 
 ![Copilot GCS mission planning with a real simulated vehicle](docs/screenshots/mission-planning.jpg)
 
 ## Features
 
 - **AI planning:** describe waypoint flights or point inspections; refine drafts and propose parameter changes through conversation.
-- **Guided workflow:** describe → review → upload → operate, with explicit vehicle actions.
-- **Flight workspace:** satellite map, waypoint altitudes, geofences, live instruments, parameters, logs and replay.
+- **Flight workspace:** map, instruments and flight controls; separate Chat, Alerts and Watch rules panels.
+- **Planning:** waypoint editing, drawn exclusion areas and verified fence upload; parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.
+- **Vision support:** attach the map and ask a vision model to propose exclusion areas. [AI interface](docs/ai-interface.md).
 - **Your model and usage:** Ollama cloud or a local endpoint; saved model, prompts and assessment frequency.
 - **Visible watch rules:** describe extra concerns in chat; review telemetry checks that turn red and request AI advice on a trigger. Rehearse failures in Diagnostics.
 
@@ -59,9 +60,9 @@ Keep the key out of Git. For local Ollama, use `http://localhost:11434/v1` and a
 Open **http://127.0.0.1:8080**. For another port: `COPILOT_PORT=8091 ./start.sh`. Stop with **Ctrl+C**.
 
 1. **Settings:** choose the model, assessment interval and automatic-monitoring state; save.
-2. Describe a task on the start page, choose a vehicle and **Continue in simulation**. Wait for home and telemetry.
-3. Send the brief to **Copilot**, or add waypoints in **Plan**. Refine and review the draft.
-4. **Enable vehicle controls**, upload, then open **Operate** for the mode → arm → start steps. **Diagnostics** contains failure simulations.
+2. Choose a vehicle and **Start simulation**. Wait for home and telemetry.
+3. Send the brief to **Copilot**, or add waypoints in **Plan mission**. Run **Check draft**.
+4. **Enable vehicle controls**, upload, then use **Flight controls** to prepare, arm and start. **Diagnostics** contains failure simulations.
 
 ## More
 

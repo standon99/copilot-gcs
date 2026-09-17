@@ -197,17 +197,25 @@ class Gateway:
             "observed": observed["value"],
         }
 
-    def download_mission(self):
-        self.link.mav.mission_request_list_send(self.sys, self.comp)
-        count = self.wait("MISSION_COUNT").count
+    def download_mission(self, mission_type=0):
+        self.link.mav.mission_request_list_send(self.sys, self.comp, mission_type)
+        count = self.wait(
+            "MISSION_COUNT", lambda m: getattr(m, "mission_type", 0) == mission_type
+        ).count
         if count > 501:
             raise ValueError("Mission exceeds supported item count")
         items = []
         for seq in range(count):
             for attempt in range(3):
-                self.link.mav.mission_request_int_send(self.sys, self.comp, seq)
+                self.link.mav.mission_request_int_send(self.sys, self.comp, seq, mission_type)
                 try:
-                    m = self.wait("MISSION_ITEM_INT", lambda m, seq=seq: m.seq == seq, 2)
+                    m = self.wait(
+                        "MISSION_ITEM_INT",
+                        lambda m, seq=seq: (
+                            m.seq == seq and getattr(m, "mission_type", 0) == mission_type
+                        ),
+                        2,
+                    )
                     break
                 except TimeoutError:
                     if attempt == 2:
@@ -226,17 +234,17 @@ class Gateway:
                     "p4": m.param4,
                 }
             )
-        self.link.mav.mission_ack_send(self.sys, self.comp, 0)
+        self.link.mav.mission_ack_send(self.sys, self.comp, 0, mission_type)
         return items
 
-    def upload(self, waypoints, home):
+    def upload(self, waypoints, home, mission_type=0):
         items = [
             {
                 "command": 16,
                 "frame": 0,
-                "lat": home["lat"],
-                "lon": home["lon"],
-                "alt": home["alt"],
+                "lat": (home or {}).get("lat", 0),
+                "lon": (home or {}).get("lon", 0),
+                "alt": (home or {}).get("alt", 0),
                 "p1": 0,
                 "p2": 0,
                 "p3": 0,
@@ -244,11 +252,17 @@ class Gateway:
             },
             *waypoints,
         ]
-        self.link.mav.mission_count_send(self.sys, self.comp, len(items))
+        if mission_type == 1:
+            items = waypoints
+        self.link.mav.mission_count_send(self.sys, self.comp, len(items), mission_type)
         deadline = time.monotonic() + 30
         sent = set()
         while time.monotonic() < deadline:
-            m = self.wait(("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"), timeout=8)
+            m = self.wait(
+                ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"),
+                lambda m: getattr(m, "mission_type", 0) == mission_type,
+                timeout=8,
+            )
             if m.get_type() == "MISSION_ACK":
                 if m.type != 0:
                     raise RuntimeError(f"Mission rejected: MAV_MISSION_RESULT={m.type}")
@@ -265,7 +279,7 @@ class Gateway:
                 m.seq,
                 w["frame"],
                 w["command"],
-                int(m.seq == 0),
+                int(mission_type == 0 and m.seq == 0),
                 1,
                 w["p1"],
                 w["p2"],
@@ -274,15 +288,16 @@ class Gateway:
                 round(w["lat"] * 1e7),
                 round(w["lon"] * 1e7),
                 w["alt"],
+                mission_type,
             )
             sent.add(m.seq)
         else:
             raise TimeoutError("Mission upload deadline expired; completion unknown")
-        received = self.download_mission()
+        received = self.download_mission(mission_type) if mission_type else self.download_mission()
         if len(received) != len(items):
             raise RuntimeError("Mission readback count mismatch")
         for i, (want, got) in enumerate(zip(items, received)):
-            if i == 0:
+            if i == 0 and mission_type == 0:
                 continue  # ArduPilot owns/normalizes the synthetic home item.
             if want["command"] != got["command"] or (
                 want["command"] not in (20, 178) and want["frame"] != got["frame"]
@@ -299,11 +314,63 @@ class Gateway:
                 # location, altitude and direction still require matching readback.
                 if want["command"] == 19 and k == "p3" and expected == 0:
                     expected = 1
+                # AP_Mission NAV_LAND stores deepstall yaw direction as a sign
+                # bit and returns +1 for default zero (also on Copter).
+                if want["command"] == 21 and k == "p4" and expected == 0:
+                    expected = 1
                 if not math.isclose(
                     expected, got[k], rel_tol=0, abs_tol=2e-7 if k in ("lat", "lon") else 0.01
                 ):
                     raise RuntimeError(f"Mission item {i}: {k} readback mismatch")
         return {"status": "verified", "items": received}
+
+    def synchronize_fence(self, args):
+        from .fence import decode_polygons
+
+        epoch = self.epoch
+        applied = []
+
+        def guard():
+            if self.epoch != epoch or time.time() - self.heartbeat > 3:
+                raise RuntimeError("Vehicle epoch/freshness changed during fence update")
+            if self.latest["HEARTBEAT"]["data"]["base_mode"] & 128:
+                raise RuntimeError("Vehicle armed during fence update")
+
+        existing = self.download_mission(1)
+        if existing != args["expected_items"]:
+            raise ValueError("Onboard fence changed externally; reload before uploading")
+        decode_polygons(existing)  # Do not erase unknown inclusion/circle/return items.
+        decode_polygons(args["items"])
+        expected = args["expected"]
+        for name, value in expected.items():
+            if not math.isclose(self.read_param(name)["value"], value, rel_tol=0, abs_tol=1e-5):
+                raise ValueError(f"{name} changed externally; reload before uploading")
+        try:
+            guard()
+            self.set_param("FENCE_ENABLE", 0, expected["FENCE_ENABLE"])
+            applied.append("FENCE_ENABLE=0")
+            guard()
+            result = self.upload(args["items"], None, 1)
+            applied.append("polygon bank verified")
+            types = int(expected["FENCE_TYPE"])
+            types = (types | 4) if args["items"] else (types & ~4)
+            changes = {"FENCE_TYPE": types, "FENCE_ACTION": args["action"]}
+            if "FENCE_AUTOENABLE" in expected:
+                changes["FENCE_AUTOENABLE"] = 0
+            changes["FENCE_ENABLE"] = int(
+                bool(types) and (bool(args["items"]) or bool(expected["FENCE_ENABLE"]))
+            )
+            for name, value in changes.items():
+                guard()
+                self.set_param(name, value, 0 if name == "FENCE_ENABLE" else expected[name])
+                applied.append(f"{name}={value}")
+            return {**result, "applied": applied}
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "error": f"Fence update incomplete: {exc}. Reload before retrying; inspect enable state.",
+                "applied": applied,
+            }
 
     def operation(self, request):
         action = request["action"]
@@ -315,8 +382,15 @@ class Gateway:
         if request.get("epoch", self.epoch) != self.epoch:
             raise RuntimeError("Vehicle boot epoch changed")
         armed = bool(self.latest["HEARTBEAT"]["data"]["base_mode"] & 128)
-        if action in ("parameter_write", "mission_upload", "log_download") and armed:
+        if (
+            action in ("parameter_write", "mission_upload", "fence_upload", "log_download")
+            and armed
+        ):
             raise RuntimeError("Disarm before this operation")
+        if action == "fence_download":
+            return {"status": "verified", "items": self.download_mission(1)}
+        if action == "fence_upload":
+            return self.synchronize_fence(args)
         if action == "parameters":
             self.link.mav.param_request_list_send(self.sys, self.comp)
             until = time.monotonic() + 25

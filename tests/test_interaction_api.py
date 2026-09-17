@@ -39,6 +39,7 @@ def fake_vehicle():
         active=None,
         chat=[],
         intent_proposal=None,
+        exclusion_proposal=None,
     )
 
 

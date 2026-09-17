@@ -11,28 +11,20 @@ Start `./start.sh`, then open `http://127.0.0.1:8080`. The production React bund
 
 The API binds to loopback. Native SITL's TCP/RC listeners use ArduPilot's normal network binding behavior; this is a local development machine setup, not a hardened network appliance. External loopback MAVLink connections are inspectable but vehicle writes are restricted to simulators launched by this app.
 
-## Task-first experience
+## Flight workspace
 
-The start page accepts an editable task brief before a vehicle is connected.
-Profile-specific task starters fill the brief without sending it. Starting a
-simulation preserves that text and opens **Plan**; sending it to Copilot is a
-separate action. The Copter starters cover a short home-position flight, a point
-inspection and a waypoint route. Plane and Rover prompts respect their vehicle
-capabilities and ask for missing locations and operating details. An inspection
-starter prepares positioning only; it does not provide camera or payload control.
+The start page connects telemetry or launches simulators, with an optional brief
+and profile-specific task starters. Launching does not invoke the model.
+**Flight** keeps instruments and contextual controls beside a map with
+**Live map / Plan mission** views. Chat, Alerts and Watch rules occupy distinct
+right-panel tabs. Numerical findings live with the plan rather than persisting
+inside the conversation. Plain functional labels replace the earlier step strip.
 
-**AI planning** starts on and targets the selected vehicle. Switching vehicle
-tabs resets the target set to that vehicle; operators can explicitly add other
-vehicles. The **Describe → Review → Upload → Operate** strip tracks the current
-draft and its review/upload revision. An edited draft is never shown as already
-uploaded because an older mission is onboard. Upload and flight controls keep
-the existing backend checks and explicit operator actions. **Diagnostics** is a
-supporting simulation tool rather than the default entry point.
-
-**Refresh checks** reruns only the numerical review, so a changed home or
-configuration can be reviewed without another inference request. **Review plan**
-also requests an AI assessment. Both preserve the upload-time context guards;
-refreshing numerical checks does not refresh earlier model comments.
+**Check draft / Recheck** runs numerical review without inference.
+**Ask AI to review** also appends a model assessment to chat. Upload remains an
+explicit reviewed action. Flight controls then offers separate control access,
+profile-specific launch mode, arming and mission start. Manual controls remain
+available in an expandable section.
 
 ## Implemented workflows
 
@@ -46,7 +38,7 @@ refreshing numerical checks does not refresh earlier model comments.
 | Intent | Optional brief; model-proposed interpretation that requires explicit acceptance into the draft; altitude bounds with a datum, maximum ground speed, route corridor, exclusion polygons, required mission-command order, and unresolved clauses; active intent pinned to the uploaded version |
 | Monitoring | Independent rules plus evidence-citing model assessments, availability/error states, operational and telemetry-only tracks, visible operator/AI-proposed watch rules with event-triggered advice, one in-flight assessment per vehicle, separately reserved monitor/planner concurrency, finite provider deadlines |
 | Settings | Persistent installation preferences for model, OpenAI-compatible endpoint, assessment interval/global pause, watch-event enable/minimum spacing, timeout and all four prompts; model discovery and explicit connection test; available without a vehicle; optimistic settings revisions |
-| Onboard fence | Disarmed circle/ceiling parameter editor with explicit above-home ceiling datum, profile-specific breach actions, conflict checks, sequential readback and enable-last behavior; configured boundary displayed on map |
+| Onboard fence | Map-drawn exclusion areas, separate verified MAVLink2 polygon-bank upload/clear, plus circle/ceiling settings; profile breach actions, conflict checks, disarmed guards and enable-last behavior |
 | Logs | Raw MAVLink tlog, normalized JSONL, SQLite audit, exact successful model-visible observation/prediction records, onboard LOG_* listing/download with gap retries, historical map/altitude replay with a causal cursor and no write route |
 | Simulation diagnostics | Nominal, GPS loss/jump, battery sag, RC loss, wind, barometer drift, magnetometer failure; Copter reduced motor output; Plane held airspeed; baseline/jitter/observation/restoration lifecycle; seed/repeat CLI; locked prediction hash followed by result disclosure |
 
@@ -59,11 +51,50 @@ normalization bypass. See the pinned [ArduPilot mission conversion](https://gith
 
 ## Interaction and display contracts
 
-`POST /api/interaction` accepts an enabled flag, explicit session IDs and an operator message. Each selected vehicle gets its own canonical draft, live state, recent conversation and a bounded metadata catalog of up to 40 relevant parameters (simulator parameters excluded). Responses cannot address another vehicle, introduce unsupported commands, change mission intent, or write to the gateway. They may also propose validated disabled watch rules and operator concern text. The watch schema/catalog is appended as an application contract without overwriting saved custom prompt text; the appended contract is visible in Settings. The entire batch validates before local drafts or proposals change. Target sessions, epochs and draft revisions are checked again after inference, including targets for which the response makes no edits.
+`POST /api/interaction` accepts an enabled flag, explicit session IDs and an operator message. Each selected vehicle gets its own canonical draft, live state, recent conversation and a bounded metadata catalog of up to 40 relevant parameters (simulator parameters excluded). Responses cannot address another vehicle, introduce unsupported commands, directly change mission intent, or write to the gateway. Exclusion changes use a separate preview/accept proposal. They may also propose validated disabled watch rules and operator concern text. The full versioned capability catalog and response schemas are supplied on every turn. The application contract is appended without overwriting saved custom prompt text; the appended contract is visible in Settings. The entire batch validates before local drafts or proposals change. Target sessions, epochs and draft revisions are checked again after inference, including targets for which the response makes no edits.
 
 Parameter proposals are session-bound, finite-lived records. A separate operator Apply endpoint checks control ownership, disarmed state, epoch, expiry, metadata and expected current values; each queued write also checks fresh telemetry and independently reads the value back. Repeated Apply on a verified proposal is idempotent; failed or expired proposals require a new proposal. Configuration writes and arming are interlocked during a proposal batch. This is sequential verified application, not an atomic autopilot transaction. Audit events retain proposals and results; pending proposals are intentionally not restored across application restarts.
 
 Map cues use `POSITION_TARGET_GLOBAL_INT`, `NAV_CONTROLLER_OUTPUT`, and the verified mission snapshot/`MISSION_CURRENT` offset (home occupies sequence zero). Unsupported frames, masked horizontal coordinates, old observations and non-navigation modes suppress targets. The orange point is a bounded projection of the reported navigation bearing, separate from the autopilot-reported position target. The artificial horizon uses native ATTITUDE radians converted to display degrees; stale instruments are explicitly unavailable. No inference is involved in rendering these instruments.
+
+## Exclusion areas and vision interface
+
+See [AI interface](ai-interface.md) for the machine-readable catalog, JSON
+operation contract, proposal example and optional WebMCP distinction.
+The catalog lives at /api/ai/capabilities and derives its response schema from
+the live validators. Geographic or map-pixel proposals create no draft change
+until acceptance checks the proposal ID, draft revision and boot epoch.
+
+Map images are operator-attached PNGs only, bounded in dimensions/size, stamped
+with draft/vehicle/time and Web Mercator bounds. The browser resets bearing/tilt,
+adds pixel coordinates and attribution, and exposes a thumbnail before sending.
+The server converts pixel polygons and rejects invalid geometry. Models without
+vision can use geographic coordinates; no model is selected automatically.
+Only planning receives the attachment; monitoring/trials are unchanged.
+
+Fence-bank download and upload use MAV_MISSION_TYPE_FENCE=1; regular missions
+remain type 0. Request, item and ACK matching is type-specific; fence item zero
+is a real vertex, not synthetic home. Exclusion command 5002 carries each ring's
+vertex count. Upload is capped at 70 total vertices and checks quantized geometry.
+Existing unsupported bank types block replacement. Fresh onboard items and
+parameters must match the operator's loaded snapshot before mutation.
+
+The gateway disables fencing while disarmed, writes and downloads the bank,
+then verifies type/action/auto-enable settings and enables last. A partial failure
+reports a journal and invalidates the cached bank; the operator must reload.
+Circle/altitude selections are preserved. Clearing removes the polygon type
+and disables fencing if no other type remains. Displayed bank geometry is a
+last-read snapshot, not a continuously synchronized external-edit feed.
+
+The numerical mission review rejects area intersections along explicit straight
+segments, including home-to-first and RTL-to-home, and requires home for these
+checks. It does not validate loiter radius, curved turns or vehicle avoidance.
+Breach response is the configured autopilot behavior, not an app route planner.
+
+LAND command 21 with default p4=0 accepts the pinned firmware's +1 readback
+(the deepstall direction sign representation). All other land fields and
+nondefault direction still require agreement. This is separate from the existing
+timed-loiter p3 default normalization.
 
 ## Operator watch engine
 
@@ -145,9 +176,9 @@ DataFlash downloads refresh the onboard log's advertised size, stream bounded wi
 
 ## Limits that remain explicit
 
-- The current release supports simulator control and external telemetry monitoring. Physical flight has not been validated, and full Mission Planner parity is not implemented. Firmware flashing, calibration wizards, joystick/continuous setpoints, arbitrary mission commands, MAVFTP, onboard polygon-fence uploads, terrain/obstacle/airspace validation, and additional airframes are outside this release.
+- The current release supports simulator control and external telemetry monitoring. Physical flight has not been validated, and full Mission Planner parity is not implemented. Firmware flashing, calibration wizards, joystick/continuous setpoints, arbitrary mission commands, MAVFTP, inclusion/circular fence-bank editing, terrain/obstacle/airspace validation, and additional airframes are outside this release.
 - Fixed-wing turn/climb/landing performance and energy/endurance are reported as unverified. Groundspeed bounds are supported; mission-level airspeed bounds, planned terrain clearance, payload completion and arbitrary natural-language requirements are retained as unresolved where the numerical schema cannot express them.
-- Satellite tiles require network access and follow provider attribution/usage terms. The mission overlay is independent of tile availability. Exclusion polygons are editable as coordinate JSON; a dedicated polygon-drawing gesture is not implemented.
+- Satellite tiles require network access and follow provider attribution/usage terms. The mission overlay is independent of tile availability. Exclusion polygons support map drawing, vertex dragging, removal, undo and coordinate JSON. Curved flight paths and automatic detouring are not checked.
 - Normalized recordings and raw tlogs each stop at 256 MiB per session with visible recording state. Audit/inference/benchmark artifacts have no automatic deletion policy. The operator manages disk retention under `runtime/copilot/`.
 - The current UI displays the latest assessment and preserves previous results in logs. It provides acknowledgement for custom watch alerts but not a complete incident escalation workflow or automatic cross-vehicle conflict analysis.
 - Stored draft revisions remain in SQLite/audit, while live session identities are intentionally recreated on restart. Export mission JSON before terminating a session to conveniently reuse it in a new one.

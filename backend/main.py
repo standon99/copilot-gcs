@@ -19,9 +19,18 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .ai_contract import CONTRACT, capabilities
 from .config import HOME, PROFILES, ROOT, RUNTIME
-from .fence import FenceEdit, fence_changes, fence_snapshot
+from .fence import (
+    FenceEdit,
+    FenceUpload,
+    decode_polygons,
+    fence_changes,
+    fence_snapshot,
+    polygon_items,
+)
 from .gateway import gateway_main
+from .geography import MapImage
 from .interaction import parameter_context, validate_edits
 from .lab import CATALOG, score
 from .metadata import FIRMWARE_COMMIT, metadata, validate_parameter
@@ -31,7 +40,7 @@ from .provider import Provider, sandbox_command
 from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
 from .store import Store
 from .telemetry import Telemetry, finite
-from .watches import METRICS, WATCH_CONTRACT, WatchBook, WatchRule, add_watch_context
+from .watches import METRICS, WatchBook, WatchRule, add_watch_context
 
 ctx = mp.get_context("spawn")
 store = Store()
@@ -81,6 +90,7 @@ class Vehicle:
         self.review = None
         self.active = None
         self.intent_proposal = None
+        self.exclusion_proposal = None
         self.monitor_enabled = True
         self.monitor_track = "operational"
         self.assessment = None
@@ -92,6 +102,7 @@ class Vehicle:
         self.predictions = []
         self.fault_restore = {}
         self.fence_busy = False
+        self.fence_bank = None
         self.parameter_apply_busy = False
         self.parameter_proposals = []
         self.trial = None
@@ -114,7 +125,11 @@ class Vehicle:
             "draft_revision": self.draft["revision"],
             "review_current": review_current(self),
             "active_revision": self.active["revision"] if self.active else None,
-            "fence": fence_snapshot(self.params),
+            "fence": {
+                **fence_snapshot(self.params),
+                "polygons": (self.fence_bank or {}).get("polygons", []),
+                "loaded_at": (self.fence_bank or {}).get("loaded_at"),
+            },
             "navigation_cue": navigation_cue(self.telemetry, self.active),
             "rules": self.telemetry.rules(self.active),
             "watches": self.watches.public(),
@@ -340,6 +355,7 @@ async def pump():
                 elif e["kind"] == "recording_error":
                     v.recording_error = e["error"]
                 elif e["kind"] == "reboot":
+                    v.fence_bank = None
                     v.active = None
                     v.review = None
                     v.params.clear()
@@ -502,7 +518,7 @@ async def read_settings():
     return {
         "preferences": settings.get(),
         "defaults": DEFAULT_PROMPTS,
-        "contracts": {"interaction": WATCH_CONTRACT},
+        "contracts": {"interaction": CONTRACT},
         "credential_attached": bool(credential_for(settings.value.base_url)),
     }
 
@@ -701,6 +717,7 @@ async def workspace(vid: str):
         "active": v.active,
         "chat": v.chat,
         "intent_proposal": v.intent_proposal,
+        "exclusion_proposal": v.exclusion_proposal,
         "parameter_proposals": v.parameter_proposals,
         "watches": v.watches.public(),
         "review_current": review_current(v),
@@ -870,7 +887,7 @@ async def upload(vid: str, request: Request, body: dict):
         or r["parameter_hash"] != parameter_hash(v)
     ):
         raise HTTPException(409, "Vehicle/home/configuration changed; refresh the review")
-    if s["armed"]:
+    if s["armed"] or v.fence_busy or v.parameter_apply_busy:
         raise HTTPException(409, "Disarm before replacing the onboard mission")
     j = submit(
         v,
@@ -945,7 +962,117 @@ async def read_fence(vid: str):
         **fence_snapshot(v.params),
         "vehicle_id": vid,
         "actions": metadata(v.profile).get("FENCE_ACTION", {}).get("Values", {}),
+        "bank": v.fence_bank,
     }
+
+
+def remember_fence(v, items):
+    try:
+        polygons = decode_polygons(items)
+        error = None
+    except ValueError as exc:
+        polygons, error = [], str(exc)
+    v.fence_bank = {
+        "items": items,
+        "polygons": polygons,
+        "error": error,
+        "epoch": v.telemetry.epoch,
+        "loaded_at": time.time(),
+    }
+
+
+@app.get("/api/vehicles/{vid}/fence/polygons")
+async def read_fence_polygons(vid: str):
+    v = vehicle(vid)
+    if v.fence_busy:
+        raise HTTPException(409, "Wait for the fence update to finish")
+    try:
+        result = await await_job(submit(v, "fence_download"))
+        remember_fence(v, result["items"])
+    except Exception as exc:
+        v.fence_bank = None
+        raise HTTPException(409, "Fence download failed: " + str(exc))
+    return await read_fence(vid)
+
+
+@app.post("/api/vehicles/{vid}/fence/polygons")
+async def write_fence_polygons(vid: str, body: FenceUpload, request: Request):
+    from shapely.geometry import Point, Polygon
+
+    v = vehicle(vid)
+    authorize(v, request)
+    s = v.telemetry.snapshot()
+    if (
+        s["armed"]
+        or v.fence_busy
+        or v.parameter_apply_busy
+        or (v.trial_task and not v.trial_task.done())
+    ):
+        raise HTTPException(409, "Disarm and finish configuration/diagnostics operations first")
+    if body.expected_revision != v.draft["revision"]:
+        raise HTTPException(409, "Draft changed; review the current exclusion areas")
+    if (
+        not v.fence_bank
+        or v.fence_bank["epoch"] != s["epoch"]
+        or v.fence_bank["items"] != body.expected_items
+    ):
+        raise HTTPException(409, "Read the onboard areas before uploading")
+    try:
+        decode_polygons(body.expected_items)
+        items = polygon_items(v.draft["intent"]["exclusions"])
+        if items and (not s["home"] or not s.get("position_valid")):
+            raise ValueError("Wait for a valid position and reported home")
+        for ring in decode_polygons(items):
+            for point in (s["home"], s["position"]):
+                if Polygon(ring).intersects(Point(point["lon"], point["lat"])):
+                    raise ValueError(
+                        "An exclusion area contains home/current position; adjust it first"
+                    )
+        names = ["FENCE_ENABLE", "FENCE_TYPE", "FENCE_ACTION"]
+        if "FENCE_AUTOENABLE" in v.params:
+            names.append("FENCE_AUTOENABLE")
+        expected = {}
+        for name in names:
+            if name not in v.params or body.expected.get(name) != v.params[name]["value"]:
+                raise ValueError(f"{name} changed or unavailable; reload the fence")
+            expected[name] = body.expected[name]
+        validate_parameter(v.profile, "FENCE_ACTION", body.action)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    v.fence_busy = True
+    v.review = None
+    j = None
+    try:
+        j = submit(
+            v,
+            "fence_upload",
+            {
+                "items": items,
+                "expected_items": body.expected_items,
+                "expected": expected,
+                "action": body.action,
+            },
+        )
+        result = await await_job(j)
+        remember_fence(v, result["items"])
+        event(
+            vid,
+            "polygon_fence_verified",
+            {"revision": body.expected_revision, "items": result["items"]},
+        )
+        return {**await read_fence(vid), "status": "verified", "applied": result["applied"]}
+    except Exception as exc:
+        v.fence_bank = None
+        raise HTTPException(
+            409,
+            {
+                "message": str(exc),
+                "job_id": (j or {}).get("id"),
+                "applied": (j or {}).get("applied", []),
+            },
+        )
+    finally:
+        v.fence_busy = False
 
 
 @app.put("/api/vehicles/{vid}/fence")
@@ -1038,12 +1165,23 @@ class Interaction(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     targets: list[str] = Field(min_length=1, max_length=6)
     enabled: bool = False
+    map_image: MapImage | None = None
+
+
+@app.get("/api/ai/capabilities")
+async def ai_capabilities():
+    return {**capabilities(), "contract": CONTRACT}
 
 
 @app.post("/api/interaction")
 async def interaction(body: Interaction):
     if not body.enabled or len(set(body.targets)) != len(body.targets):
         raise HTTPException(422, "Enable interaction mode and select unique target vehicles")
+    if body.map_image and (
+        body.map_image.vehicle_id not in body.targets
+        or body.map_image.draft_revision != vehicle(body.map_image.vehicle_id).draft["revision"]
+    ):
+        raise HTTPException(409, "Map capture belongs to another draft/target; attach again")
     snapshots = {}
     for vid in body.targets:
         v = vehicle(vid)
@@ -1055,6 +1193,7 @@ async def interaction(body: Interaction):
             "profile": v.profile,
             "epoch": v.telemetry.epoch,
             "draft": copy.deepcopy(v.draft),
+            "checks": check(v.draft, v.profile, v.telemetry.snapshot()["home"]),
             "parameters": parameter_context(v.profile, v.params, body.message),
             "live_state": v.telemetry.snapshot(),
             "supported_commands": PROFILES[v.profile]["commands"],
@@ -1063,15 +1202,18 @@ async def interaction(body: Interaction):
         }
     try:
         raw, meta = await provider.complete(
-            settings.value.prompts.interaction + "\n\n" + WATCH_CONTRACT,
+            settings.value.prompts.interaction + "\n\n" + CONTRACT,
             {
                 "request": body.message,
                 "selected_vehicles": list(snapshots.values()),
                 "watch_metrics": METRICS,
                 "watch_rule_schema": WatchRule.model_json_schema(),
+                "gcs_capabilities": capabilities(),
+                "map_image": body.map_image.context() if body.map_image else None,
             },
+            image=body.map_image.image if body.map_image else None,
         )
-        reply, prepared = validate_edits(raw, snapshots, vehicles)
+        reply, prepared = validate_edits(raw, snapshots, vehicles, body.map_image)
     except Exception as exc:
         raise HTTPException(502, "No interaction changes applied: " + str(exc)[:300])
     changes = {}
@@ -1092,6 +1234,16 @@ async def interaction(body: Interaction):
                 "operations": edit["operations"],
             }
             save_draft(v, edit["draft"])
+        if edit["exclusion_proposal"] is not None:
+            v.exclusion_proposal = {
+                **edit["exclusion_proposal"],
+                "id": uuid.uuid4().hex,
+                "base_revision": v.draft["revision"],
+                "epoch": v.telemetry.epoch,
+                "model": meta,
+                "map_context": body.map_image.context() if body.map_image else None,
+            }
+            event(v.id, "exclusions_proposed", v.exclusion_proposal)
         if edit["parameters"]:
             proposal = {
                 "id": uuid.uuid4().hex,
@@ -1122,6 +1274,27 @@ async def interaction(body: Interaction):
         v.chat.append(entry)
         event(vid, "interaction", entry)
     return {"reply": reply, "workspaces": [await workspace(vid) for vid in body.targets]}
+
+
+@app.post("/api/vehicles/{vid}/exclusions/{operation}")
+async def accept_exclusions(vid: str, operation: str, body: dict):
+    v = vehicle(vid)
+    p = v.exclusion_proposal
+    if not p or body.get("proposal_id") != p["id"]:
+        raise HTTPException(409, "Exclusion proposal changed; refresh")
+    if v.trial_task and not v.trial_task.done():
+        raise HTTPException(409, "Finish diagnostics before changing areas")
+    if operation == "accept":
+        if p["base_revision"] != v.draft["revision"] or p["epoch"] != v.telemetry.epoch:
+            raise HTTPException(409, "Exclusion proposal is stale; ask Copilot to propose it again")
+        d = copy.deepcopy(v.draft)
+        d["intent"]["exclusions"] = p["polygons"]
+        save_draft(v, revise(v.draft, d, p["base_revision"]))
+    elif operation != "dismiss":
+        raise HTTPException(422, "Use accept or dismiss")
+    event(vid, "exclusions_" + operation, p)
+    v.exclusion_proposal = None
+    return await workspace(vid)
 
 
 def parameter_proposal(v, pid):

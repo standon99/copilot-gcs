@@ -1,5 +1,11 @@
 # Technical design: Copilot GCS
 
+Current UI and AI/geofence behavior is documented in [product](product.md),
+[implementation](implementation.md) and [AI interface](ai-interface.md).
+This document remains the architecture/design baseline; references to future
+dynamic model tools or the earlier four-step display are not current UI claims.
+
+
 Design baseline v0.3 · 2026-09-17 · The product is an AI-enabled ground control station; see [product.md](product.md) for its task-first direction. See [implementation.md](implementation.md) for shipped behavior and remaining differences, and [validation.md](validation.md) for measured evidence. Targets below remain design targets unless verified there.
 
 Build a browser application that provides the normal ground-station workflow and a persistent LLM copilot. The operator can describe a mission in chat or construct it on the map; both use one editable draft that the LLM can inspect and revise through conversation before upload. During operation, the backend continuously records and checks vehicle data, supplies bounded observations to an inference API, and presents evidence-linked assessments. An isolated Simulation diagnostics measures detection on faults whose identities are hidden from the monitor.
