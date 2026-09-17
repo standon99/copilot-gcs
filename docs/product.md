@@ -16,7 +16,7 @@ share the same selected vehicles and mission workspace.
 3. **Upload:** choose the reviewed revision, apply it explicitly and verify the
    onboard mission. Uploading does not arm or start a vehicle.
 4. **Operate:** use vehicle controls and instruments, follow progress and ask
-   Copilot to explain telemetry. Further edits prepare a separate future draft.
+   Copilot to explain telemetry. Describe extra concerns, review and enable visible watch rules, and receive local alerts plus event-triggered AI advice. Further edits prepare a separate future draft.
 
 The first task starters emphasize **simple waypoint flights and point
 inspections**. A Copter inspection means flying to a specified point, holding

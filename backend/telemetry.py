@@ -26,8 +26,19 @@ ALLOWED = {
     "RC_CHANNELS",
     "SERVO_OUTPUT_RAW",
     "SCALED_PRESSURE",
+    "TERRAIN_REPORT",
+    "DISTANCE_SENSOR",
 }
 SIGNALS = {
+    "TERRAIN_REPORT": ["lat", "lon", "spacing", "terrain_height", "current_height"],
+    "DISTANCE_SENSOR": [
+        "id",
+        "orientation",
+        "min_distance",
+        "max_distance",
+        "current_distance",
+        "signal_quality",
+    ],
     "HEARTBEAT": ["type", "autopilot", "base_mode", "custom_mode", "system_status", "mode"],
     "GLOBAL_POSITION_INT": ["lat", "lon", "alt", "relative_alt", "vx", "vy", "vz", "hdg"],
     "GPS_RAW_INT": ["fix_type", "eph", "epv", "satellites_visible"],
@@ -99,17 +110,30 @@ class Telemetry:
         self.epoch = 0
         self.sysid = None
         self.dropped = 0
+        self.position_ready = False
+        self.ranges = {}
 
     def ingest(self, event):
         event = finite(event)
         if event["epoch"] != self.epoch:
             self.latest.clear()
             self.history.clear()
+            self.position_ready = False
+            self.ranges.clear()
             self.epoch = event["epoch"]
         event["evidence_id"] = f"{self.id}:{self.epoch}:{event['seq']}"
         self.sysid = event["sysid"]
         self.dropped = event.get("dropped", 0)
         self.latest[event["type"]] = event
+        if event["type"] == "DISTANCE_SENSOR":
+            self.ranges[event["data"].get("id", 0)] = event
+        if event["type"] == "GLOBAL_POSITION_INT":
+            gps = self.latest.get("GPS_RAW_INT", {})
+            if (
+                gps.get("data", {}).get("fix_type", 0) >= 3
+                and 0 <= event["ts"] - gps.get("ts", 0) < 3
+            ):
+                self.position_ready = True
         if event["type"] in ALLOWED:
             self.history.append(event)
         if event["type"] == "STATUSTEXT":
@@ -151,6 +175,7 @@ class Telemetry:
                 }
                 if p
                 else None,
+                "position_valid": self.position_ready and bool(p),
                 "home": home,
                 "speed": v.get("groundspeed"),
                 "airspeed": v.get("airspeed"),

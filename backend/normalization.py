@@ -7,6 +7,16 @@ asking a language model to repeatedly infer scaling and altitude references.
 import math
 
 SCALES = {
+    "TERRAIN_REPORT": {
+        "lat": ("latitude_deg", 1e-7),
+        "lon": ("longitude_deg", 1e-7),
+        "spacing": ("grid_spacing_m", 1),
+        "terrain_height": ("terrain_amsl_m", 1),
+        "current_height": ("height_above_terrain_m", 1),
+    },
+    "DISTANCE_SENSOR": {
+        name: (name + "_m", 0.01) for name in ("min_distance", "max_distance", "current_distance")
+    },
     "GLOBAL_POSITION_INT": {
         "lat": ("latitude_deg", 1e-7),
         "lon": ("longitude_deg", 1e-7),

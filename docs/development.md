@@ -14,7 +14,16 @@ From the repository root, with Node 22+ on PATH:
 git diff --check
 ```
 
-The current suite contains **85 Python tests** and **7 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+The current suite contains **109 Python tests** and **8 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+
+For an isolated runtime during development, use
+`COPILOT_RUNTIME_DIR="$PWD/runtime/test-session" COPILOT_PORT=8091 ./start.sh`.
+Settings, audit and sessions then stay separate from the normal installation.
+The inference sandbox also denies that runtime directory. Use a directory under
+ignored `runtime/`; do not commit runtime data. New runtimes use configured
+defaults, including automatic monitoring, so save the intended test settings
+before launching vehicles. Test runners below still need their base URL changed
+when using a different port.
 
 For explicit live tests, start the app in another terminal first. These scripts currently target **port 8080**:
 

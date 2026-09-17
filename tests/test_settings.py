@@ -20,6 +20,8 @@ def test_preferences_persist_and_reject_stale_writer(tmp_path):
     changed = Preferences(
         monitor_interval=300,
         monitor_enabled=False,
+        watch_min_interval=120,
+        watch_inference_enabled=False,
         model="local-model",
         base_url="http://localhost:11434",
     )

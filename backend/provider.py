@@ -43,7 +43,9 @@ def sandbox_command(base_url=None):
     if sys.platform != "darwin":
         return base, False
     # Trusted Python and CA certificates remain readable, workspace state does not.
-    denied = [ROOT / ".env", ROOT / "runtime", ROOT / "ardupilot", ROOT / ".git"]
+    from .config import RUNTIME
+
+    denied = [ROOT / ".env", ROOT / "runtime", RUNTIME, ROOT / "ardupilot", ROOT / ".git"]
     port = local_port(base_url) if base_url else None
     profile = (
         '(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null"))'

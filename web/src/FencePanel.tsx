@@ -173,10 +173,10 @@ export function FencePanel({ vehicle, control, onChanged, onClaim }: any) {
             {busy ? "Writing & verifying…" : "Apply onboard fence"}
           </button>
           {!control && (
-            <button onClick={onClaim}>Claim control for fence</button>
+            <button onClick={onClaim}>Enable vehicle controls for fence</button>
           )}
           {(!control || vehicle.armed) && (
-            <p>Claim control and disarm to apply fence changes.</p>
+            <p>Enable vehicle controls and disarm to apply fence changes.</p>
           )}
         </>
       )}

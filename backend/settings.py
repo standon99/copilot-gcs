@@ -67,6 +67,8 @@ class Preferences(BaseModel):
     base_url: str = Field(default=BASE_URL, max_length=500)
     model: str = Field(default=MODEL, min_length=1, max_length=160)
     monitor_enabled: bool = True
+    watch_inference_enabled: bool = True
+    watch_min_interval: int = Field(default=60, ge=10, le=3600)
     monitor_interval: int = Field(default=int(MONITOR_INTERVAL), ge=10, le=86400)
     inference_timeout: int = Field(default=int(INFERENCE_TIMEOUT), ge=10, le=120)
     prompts: Prompts = Field(default_factory=Prompts)

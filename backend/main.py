@@ -31,6 +31,7 @@ from .provider import Provider, sandbox_command
 from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
 from .store import Store
 from .telemetry import Telemetry, finite
+from .watches import METRICS, WATCH_CONTRACT, WatchBook, WatchRule, add_watch_context
 
 ctx = mp.get_context("spawn")
 store = Store()
@@ -83,6 +84,7 @@ class Vehicle:
         self.monitor_enabled = True
         self.monitor_track = "operational"
         self.assessment = None
+        self.watches = WatchBook()
         self.monitor_status = "waiting"
         self.next_monitor = time.time() + settings.value.monitor_interval
         self.inference = None
@@ -110,10 +112,13 @@ class Vehicle:
             "error": self.error,
             "parameters": len(self.params),
             "draft_revision": self.draft["revision"],
+            "review_current": review_current(self),
             "active_revision": self.active["revision"] if self.active else None,
             "fence": fence_snapshot(self.params),
             "navigation_cue": navigation_cue(self.telemetry, self.active),
             "rules": self.telemetry.rules(self.active),
+            "watches": self.watches.public(),
+            "watch_inference": watch_inference_state(self),
             "assessment": self.assessment,
             "assessment_stale": self.assessment is None
             or time.time() - self.assessment["observed_at"] > 45,
@@ -174,7 +179,9 @@ def authorize(v, request):
     if not v.owned:
         raise HTTPException(403, "External connections are read-only in this SITL release")
     if v.lease != sid or v.lease_until < time.time():
-        raise HTTPException(409, "Claim control of this vehicle before sending a command")
+        raise HTTPException(
+            409, "Enable vehicle controls for this vehicle before sending a command"
+        )
     s = v.telemetry.snapshot()
     if s["heartbeat_age"] is None or s["heartbeat_age"] > 3:
         raise HTTPException(409, "Heartbeat is stale")
@@ -235,8 +242,23 @@ async def await_job(j, timeout=60):
     return j
 
 
-async def monitor(v):
+def watch_inference_state(v):
+    if v.trial_task and not v.trial_task.done():
+        return "Disabled during diagnostics (keeps evaluation blind)"
+    if v.monitor_track != "operational":
+        return "Disabled on telemetry-only track"
+    if not settings.value.monitor_enabled or not v.monitor_enabled:
+        return "Automatic AI paused; local alerts remain active"
+    if not settings.value.watch_inference_enabled:
+        return "Event-triggered AI disabled in Settings"
+    return "Enabled"
+
+
+async def monitor(v, triggers=None):
+    triggers = triggers or []
     observation = v.telemetry.observations(v.active, v.monitor_track)
+    if v.monitor_track == "operational" and not (v.trial_task and not v.trial_task.done()):
+        add_watch_context(observation, v.watches, triggers, v.telemetry)
     v.monitor_status = "assessing"
     try:
         result = await provider.monitor(observation)
@@ -247,14 +269,18 @@ async def monitor(v):
         v.predictions.append(result)
         v.predictions = v.predictions[-1000:]
         v.monitor_status = "available"
+        result["trigger"] = "watch_rule" if triggers else "scheduled"
+        v.watches.mark(triggers, "AI advice available")
         event(v.id, "assessment", result)
         # Store exactly what the model saw for audit, never credentials or private truth.
         with (v.folder / "inference.jsonl").open("a") as f:
             f.write(json.dumps({"observations": observation, "prediction": result}) + "\n")
     except asyncio.CancelledError:
+        v.watches.mark(triggers, "Assessment cancelled")
         raise
     except Exception as exc:
         v.monitor_status = "unavailable: " + str(exc)[:180]
+        v.watches.mark(triggers, "AI unavailable; inspect local alert")
         event(v.id, "inference_error", {"error": str(exc)[:180]})
         try:
             with (v.folder / "inference.jsonl").open("a") as f:
@@ -340,7 +366,27 @@ async def pump():
                         j.update(
                             status="failed", error="Gateway exited; operation completion unknown"
                         )
-            if (
+            now = time.time()
+            triggers = v.watches.evaluate(v.telemetry, now)
+            watch_state = watch_inference_state(v)
+            for trigger in triggers:
+                event(
+                    v.id,
+                    "watch_triggered",
+                    {k: val for k, val in trigger.items() if k != "records"},
+                )
+            v.watches.queue(triggers, watch_state == "Enabled", watch_state)
+            if watch_state != "Enabled" and v.watches.pending:
+                v.watches.mark(list(v.watches.pending.values()), watch_state)
+                v.watches.pending.clear()
+            batch = (
+                v.watches.take_pending(now, settings.value.watch_min_interval)
+                if not v.inference and watch_state == "Enabled"
+                else []
+            )
+            if batch:
+                v.inference = background(monitor(v, batch))
+            elif (
                 v.monitor_enabled
                 and settings.value.monitor_enabled
                 and not v.inference
@@ -428,6 +474,9 @@ async def bootstrap(request: Request):
             "home": HOME,
             "monitor_interval": settings.value.monitor_interval,
             "monitor_enabled": settings.value.monitor_enabled,
+            "watch_inference_enabled": settings.value.watch_inference_enabled,
+            "watch_min_interval": settings.value.watch_min_interval,
+            "watch_metrics": METRICS,
             "capabilities": {
                 "owned_sitl_write": True,
                 "external_write": False,
@@ -453,6 +502,7 @@ async def read_settings():
     return {
         "preferences": settings.get(),
         "defaults": DEFAULT_PROMPTS,
+        "contracts": {"interaction": WATCH_CONTRACT},
         "credential_attached": bool(credential_for(settings.value.base_url)),
     }
 
@@ -652,6 +702,8 @@ async def workspace(vid: str):
         "chat": v.chat,
         "intent_proposal": v.intent_proposal,
         "parameter_proposals": v.parameter_proposals,
+        "watches": v.watches.public(),
+        "review_current": review_current(v),
         "checks": check(v.draft, v.profile, v.telemetry.snapshot()["home"]),
     }
 
@@ -714,10 +766,91 @@ async def review(vid: str):
 def parameter_hash(v):
     return hashlib.sha256(
         json.dumps(
-            {k: p["value"] for k, p in sorted(v.params.items()) if not k.startswith("SIM_")},
+            {
+                k: p["value"]
+                for k, p in sorted(v.params.items())
+                if not k.startswith("SIM_")
+                and k not in ("STAT_RUNTIME", "STAT_FLTTIME", "STAT_BOOTCNT")
+            },
             sort_keys=True,
         ).encode()
     ).hexdigest()
+
+
+def review_current(v):
+    s = v.telemetry.snapshot()
+    r = v.review
+    return bool(
+        r
+        and r["revision"] == v.draft["revision"]
+        and r["epoch"] == s["epoch"]
+        and s["home"]
+        and r["home"] == s["home"]
+        and r["parameter_hash"] == parameter_hash(v)
+    )
+
+
+class WatchEdit(BaseModel):
+    expected_revision: int
+    operation: str
+    id: str | None = None
+    rule: WatchRule | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+@app.post("/api/vehicles/{vid}/watches")
+async def edit_watches(vid: str, body: WatchEdit):
+    v = vehicle(vid)
+    book = v.watches
+    if v.trial_task and not v.trial_task.done():
+        raise HTTPException(409, "Finish diagnostics before editing operator watches")
+    if book.revision != body.expected_revision:
+        raise HTTPException(409, "Watch rules changed; reload before editing")
+    r = next((r for r in book.rules if r["id"] == body.id), None)
+    if body.operation in ("add", "update"):
+        if body.rule is None:
+            raise HTTPException(422, "Supply a complete rule")
+        if body.operation == "add":
+            try:
+                book.add(body.rule.model_dump())
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
+        elif r:
+            r.update(
+                spec=body.rule.model_dump(),
+                enabled=False,
+                active=False,
+                since=None,
+                state="disabled",
+                latched=False,
+                last_trigger=None,
+                count=0,
+                ai_status="Edited; enable after review",
+            )
+        else:
+            raise HTTPException(404, "Unknown rule on this vehicle")
+    elif body.operation == "notes" and body.notes is not None:
+        book.notes = body.notes
+    elif body.operation in ("enable", "disable", "acknowledge", "remove") and r:
+        if body.operation == "remove":
+            book.rules.remove(r)
+        elif body.operation == "acknowledge":
+            r["latched"] = False
+        else:
+            r.update(
+                enabled=body.operation == "enable",
+                active=False,
+                since=None,
+                state="waiting" if body.operation == "enable" else "disabled",
+            )
+    else:
+        raise HTTPException(422, "Unknown operation or rule")
+    if body.operation != "acknowledge":
+        book.pending.pop(body.id, None)
+    book.revision += 1
+    store.put("watches:" + vid, book.public())
+    event(vid, "watches_edited", {"operation": body.operation, **book.public()})
+    return await workspace(vid)
 
 
 @app.post("/api/vehicles/{vid}/upload")
@@ -914,6 +1047,8 @@ async def interaction(body: Interaction):
     snapshots = {}
     for vid in body.targets:
         v = vehicle(vid)
+        if v.trial_task and not v.trial_task.done():
+            raise HTTPException(409, "Finish diagnostics before AI planning or custom watch edits")
         snapshots[vid] = {
             "vehicle_id": vid,
             "label": v.snapshot()["name"],
@@ -924,11 +1059,17 @@ async def interaction(body: Interaction):
             "live_state": v.telemetry.snapshot(),
             "supported_commands": PROFILES[v.profile]["commands"],
             "previous_messages": copy.deepcopy(v.chat[-6:]),
+            "watches": v.watches.public(),
         }
     try:
         raw, meta = await provider.complete(
-            settings.value.prompts.interaction,
-            {"request": body.message, "selected_vehicles": list(snapshots.values())},
+            settings.value.prompts.interaction + "\n\n" + WATCH_CONTRACT,
+            {
+                "request": body.message,
+                "selected_vehicles": list(snapshots.values()),
+                "watch_metrics": METRICS,
+                "watch_rule_schema": WatchRule.model_json_schema(),
+            },
         )
         reply, prepared = validate_edits(raw, snapshots, vehicles)
     except Exception as exc:
@@ -936,6 +1077,14 @@ async def interaction(body: Interaction):
     changes = {}
     for edit in prepared:
         v = edit["vehicle"]
+        for spec in edit["watch_rules"]:
+            v.watches.add(spec, "AI proposal")
+        if edit["watch_notes"] is not None:
+            v.watches.notes = edit["watch_notes"]
+            v.watches.revision += 1
+        if edit["watch_rules"] or edit["watch_notes"] is not None:
+            store.put("watches:" + v.id, v.watches.public())
+            event(v.id, "watches_proposed", v.watches.public())
         if edit["draft"] is not None:
             changes[v.id] = {
                 "before": snapshots[v.id]["draft"],
@@ -1237,8 +1386,10 @@ def replay_data(ident, at=None):
             if at is not None and e["ts"] > at:
                 continue
             telemetry.ingest(e)
-            if e["type"] == "GLOBAL_POSITION_INT" and (
-                not points or e["ts"] - points[-1]["ts"] >= 1
+            if (
+                e["type"] == "GLOBAL_POSITION_INT"
+                and telemetry.position_ready
+                and (not points or e["ts"] - points[-1]["ts"] >= 1)
             ):
                 p = e["data"]
                 points.append(

@@ -1,5 +1,52 @@
 # Validation record
 
+## Visible watches and operating guidance — 2026-09-17
+
+Iteration based on `8421fe8`. **109 Python tests and 8 frontend tests passed**,
+with Python lint/format checks and the production TypeScript/Vite build. New
+checks cover drifting startup coordinates, AGL validity/units/range/terrain
+coverage, phase evidence, dwell/hysteresis/cooldown, retained alerts, pause and
+trial isolation, exact event evidence, watch revision/target guards, voltage
+sentinels and configuration-review hashes. This adds an operational watch
+workflow; it does not establish failure-detection accuracy.
+
+The user's native Plane recording began at 0°,0°, then drifted slightly around
+that location without a GPS fix before initializing at Canberra. It was disarmed.
+The map now waits for initialization. Fresh native Plane, Copter and Rover
+sessions all produced their first accepted map positions near the intended spawn.
+
+A real `gpt-oss:120b` interaction proposed two typed, disabled watches alongside a
+Copter mission: AGL below 10 m and a deliberately conflicting 15 m relative-home
+test ceiling. The model emitted zero-coordinate navigation placeholders and did
+not populate the separate concern-notes field. The operator replaced those
+coordinates with reported home and entered the concern before review/upload;
+no placeholder route was flown. The application contract was then clarified,
+without overwriting saved custom prompts. That revised wording was not separately
+retested against the cloud model. Model proposals still require inspection.
+
+After numerical review and verified mission readback, native GUIDED/Arm/Start
+controls flew takeoff to 20 m, a 10-second timed hold and RTL. The relative-height
+watch fired at **15.166 m**. Its event assessment began **0.0026 s** after the
+local trigger and completed **4.215 s** after it, despite a **3,600-second periodic
+interval**. The response cited the ceiling breach. One interaction and one event
+assessment were used, with no repair requests; a sustained breach did not produce
+additional calls. Model comments that current was “normal” are not validated
+against a propulsion baseline and do not establish propeller health.
+
+Peak relative altitude was **20.004 m**; the Copter landed and disarmed. Plane
+and Rover remained disarmed. The AGL watch was correctly unavailable in flight
+because default SITL supplied no valid range/terrain source. Valid AGL breach
+handling was exercised with unit fixtures, not a native sensor-equipped flight.
+The latched red alert remained visible after landing. See the compact
+[measured record](watch-validation.json).
+
+Production-browser checks covered plain version labels, upload prerequisites,
+vehicle-specific start guidance, watch cards and inference controls. A manual Rover rule triggered locally with AI paused; acknowledgement kept the active breach red, editing disabled it, and removal cleared it. The fence-pane control button obtained a real lease without arming. Settings
+were saved through the UI in an isolated runtime. Updated screenshots show the
+actual app after the flight, with its earlier assessment clearly marked stale;
+no telemetry or model output was fabricated. User settings remained separate.
+Older records below describe their original revisions and screenshots.
+
 ## Copilot GCS task workflow — 2026-09-17
 
 The product now leads with everyday waypoint flights and point inspections:

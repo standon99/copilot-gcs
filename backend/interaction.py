@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .config import PROFILES
 from .metadata import metadata, validate_parameter
 from .planning import apply_patch
+from .watches import WatchRule
 
 
 class ParameterProposal(BaseModel):
@@ -22,6 +23,8 @@ class VehicleEdits(BaseModel):
     vehicle_id: str
     operations: list[dict] = Field(default_factory=list, max_length=100)
     parameters: list[ParameterProposal] = Field(default_factory=list, max_length=20)
+    watch_rules: list[WatchRule] = Field(default_factory=list, max_length=20)
+    watch_notes: str | None = Field(default=None, max_length=2000)
 
 
 class InteractionResponse(BaseModel):
@@ -70,6 +73,10 @@ def validate_edits(raw, snapshots, live):
             raise ValueError("Target session changed during inference; nothing applied")
         if v.draft["revision"] != before["draft"]["revision"]:
             raise ValueError("A target draft changed during inference; nothing applied")
+        if "watches" in before and v.watches.revision != before["watches"]["revision"]:
+            raise ValueError("Watch rules changed during inference; nothing applied")
+        if getattr(v, "trial_task", None) and not v.trial_task.done():
+            raise ValueError("Diagnostics started during inference; nothing applied")
     seen = set()
     prepared = []
     for edit in response.vehicles:
@@ -79,6 +86,8 @@ def validate_edits(raw, snapshots, live):
         seen.add(vid)
         before = snapshots[vid]
         v = live.get(vid)
+        if edit.watch_rules and len(v.watches.rules) + len(edit.watch_rules) > 20:
+            raise ValueError("At most 20 watches per vehicle; remove existing watches first")
         if not v or v.closed or v.telemetry.epoch != before["epoch"]:
             raise ValueError("Target session changed during inference; nothing applied")
         if v.draft["revision"] != before["draft"]["revision"]:
@@ -110,6 +119,13 @@ def validate_edits(raw, snapshots, live):
             validate_parameter(v.profile, p.name, p.value)
             params.append({**p.model_dump(), "expected": old["value"]})
         prepared.append(
-            {"vehicle": v, "draft": draft, "operations": edit.operations, "parameters": params}
+            {
+                "vehicle": v,
+                "draft": draft,
+                "operations": edit.operations,
+                "parameters": params,
+                "watch_rules": [r.model_dump() for r in edit.watch_rules],
+                "watch_notes": edit.watch_notes,
+            }
         )
     return response.reply, prepared

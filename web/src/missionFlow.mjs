@@ -11,6 +11,8 @@ export function missionProgress(workspace, vehicle) {
     review &&
     review.revision === draft.revision &&
     review.epoch === vehicle.epoch &&
+    vehicle.review_current !== false &&
+    workspace.review_current !== false &&
     review.upload_allowed,
   );
   const uploaded = Boolean(
@@ -25,6 +27,24 @@ export function missionProgress(workspace, vehicle) {
     uploaded,
     hasDraft,
   };
+}
+
+export function uploadReason(workspace, vehicle, control, busy) {
+  if (busy) return "Wait for the current request to finish.";
+  if (!vehicle?.owned) return "Uploads require an app-owned simulator.";
+  if (!workspace?.draft?.waypoints?.length)
+    return "Add a mission before uploading.";
+  if (missionProgress(workspace, vehicle).uploaded)
+    return "This version is already uploaded and verified. Open Operate for mission controls.";
+  if (vehicle.armed) return "Disarm before uploading a mission.";
+  if (!missionProgress(workspace, vehicle).reviewed)
+    return workspace.review &&
+      (vehicle.review_current === false || workspace.review_current === false)
+      ? "Vehicle context changed. Refresh checks before uploading."
+      : "Review this draft and resolve blocking findings first.";
+  if (!control)
+    return "Enable vehicle controls, then upload. This does not arm the vehicle.";
+  return "Ready to upload this version and verify it on the vehicle.";
 }
 
 export function taskStarters(profile = "copter") {

@@ -5,8 +5,9 @@ import { api } from "./api";
 import { SettingsPanel } from "./SettingsPanel";
 import { AttitudeIndicator } from "./AttitudeIndicator";
 import { FencePanel } from "./FencePanel";
+import { WatchPanel } from "./WatchPanel";
 import { MissionWorkflow } from "./MissionWorkflow";
-import { missionProgress, taskStarters } from "./missionFlow.mjs";
+import { missionProgress, taskStarters, uploadReason } from "./missionFlow.mjs";
 import { registerGroundStationTools } from "./webmcp";
 import * as maplibregl from "maplibre-gl";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
@@ -342,7 +343,8 @@ function MapView({
     p &&
     Number.isFinite(p.lat) &&
     Number.isFinite(p.lon) &&
-    !(p.lat === 0 && p.lon === 0);
+    Math.abs(p.lat) <= 90 &&
+    Math.abs(p.lon) <= 180;
   const updateVehicle = () => {
     const m = map.current;
     if (!m?.getSource("route")) return;
@@ -350,7 +352,11 @@ function MapView({
     const cueFeatures: any[] = [];
     for (const kind of ["target", "carrot"]) {
       const point = cue?.[kind];
-      if (!point || !validPosition(vehicle?.position)) {
+      if (
+        !point ||
+        vehicle?.position_valid === false ||
+        !validPosition(vehicle?.position)
+      ) {
         cueMarkers.current[kind]?.remove();
         delete cueMarkers.current[kind];
         continue;
@@ -383,7 +389,7 @@ function MapView({
     });
     const ids = new Set<string>();
     for (const v of visibleVehicles) {
-      if (!validPosition(v.position)) continue;
+      if (!validPosition(v.position) || v.position_valid === false) continue;
       const id = v.id || "selected";
       ids.add(id);
       let marker = vehicleMarkers.current[id];
@@ -427,7 +433,13 @@ function MapView({
         marker.remove();
         delete vehicleMarkers.current[id];
       }
-    const position = historical?.snapshot?.position || vehicle?.position;
+    const position = historical
+      ? historical.snapshot?.position_valid
+        ? historical.snapshot.position
+        : null
+      : vehicle?.position_valid
+        ? vehicle.position
+        : null;
     if (!centered.current && validPosition(position)) {
       m.jumpTo({ center: [position.lon, position.lat], zoom: 17 });
       centered.current = true;
@@ -476,6 +488,7 @@ function MapView({
           </button>
           <button
             title="Center vehicle"
+            disabled={!historical && !vehicle?.position_valid}
             onClick={() => {
               const p =
                 historical?.snapshot?.position || vehicle?.position || home;
@@ -487,8 +500,9 @@ function MapView({
           {!historical && (
             <button
               onClick={() => {
-                const points = visibleVehicles.filter((v: Json) =>
-                  validPosition(v.position),
+                const points = visibleVehicles.filter(
+                  (v: Json) =>
+                    validPosition(v.position) && v.position_valid !== false,
                 );
                 if (!points.length) return;
                 const bounds = new maplibregl.LngLatBounds();
@@ -505,7 +519,10 @@ function MapView({
       </div>
       {mapError && <div className="map-error">{mapError}</div>}
       <div className="map-position">
-        {validPosition(historical?.snapshot?.position || vehicle?.position)
+        {(historical
+          ? historical.snapshot?.position_valid
+          : vehicle?.position_valid) &&
+        validPosition(historical?.snapshot?.position || vehicle?.position)
           ? `${vehicle?.profile?.toUpperCase() || "VEHICLE"} ${vehicle?.id?.slice(0, 4) || ""} · ${fmt((historical?.snapshot?.position || vehicle.position).lat, 6)}, ${fmt((historical?.snapshot?.position || vehicle.position).lon, 6)} · ${fmt((historical?.snapshot?.position || vehicle.position).relative)} m relative${!historical && vehicle?.gps_fix < 3 ? " · waiting for GPS fix" : ""}`
           : "Waiting for a valid vehicle position…"}
       </div>
@@ -847,7 +864,7 @@ function App() {
       });
       await waitJob(j.id);
       setNotice(
-        `Mission r${draft.revision} uploaded and verified. Open Operate to arm and start.`,
+        `Mission version ${draft.revision} uploaded and verified. Open Operate to arm and start.`,
       );
     }, "upload");
   const sendChat = () => {
@@ -1311,19 +1328,34 @@ function App() {
                               : "Read-only connection"}
                           </span>
                         </div>
+                        <p className="control-help">
+                          Enable vehicle controls reserves this vehicle for this
+                          browser for 30 seconds, renewed while open. It does
+                          not arm or start it.
+                        </p>
+                        <p className="control-help">
+                          To run a mission: review and upload in Plan → set{" "}
+                          {current.profile === "copter"
+                            ? "GUIDED"
+                            : current.profile === "plane"
+                              ? "FBWA"
+                              : "HOLD"}{" "}
+                          → Arm → Start mission.{" "}
+                          {current.profile !== "rover" &&
+                            "A ground-start mission needs a Takeoff item first."}{" "}
+                          Native prearm checks still apply; inspect status
+                          messages if refused.
+                        </p>
                         <div className="controls">
                           <button
                             className={control ? "claimed" : "primary"}
                             disabled={!current.owned}
-                            onClick={() =>
-                              guard(async () => {
-                                await api(`/vehicles/${vid}/lease`, "POST", {});
-                                setControl(true);
-                              })
-                            }
+                            onClick={claimControl}
                           >
                             <Radio size={15} />
-                            {control ? "Control held" : "Claim control"}
+                            {control
+                              ? "Control held"
+                              : "Enable vehicle controls"}
                           </button>
                           <select
                             aria-label="Flight mode"
@@ -1403,6 +1435,24 @@ function App() {
                               : "Return home"}
                           </button>
                         </div>
+                        <button
+                          className="primary"
+                          disabled={
+                            !control ||
+                            !current.armed ||
+                            !work?.active ||
+                            !!busy
+                          }
+                          onClick={() => guard(() => runAction("start"))}
+                        >
+                          <Play size={14} /> Start mission
+                        </button>
+                        {!work?.active && (
+                          <small>
+                            Upload and verify a mission first. Arming and
+                            starting are separate actions.
+                          </small>
+                        )}
                         <div className="rule-grid">
                           {current.rules.length ? (
                             current.rules.map((r: Json) => (
@@ -1435,7 +1485,8 @@ function App() {
                       <div className="mission-editor">
                         <div className="section-title">
                           <h2>
-                            Mission draft <span>r{draft?.revision ?? 0}</span>
+                            Mission draft{" "}
+                            <span>Version {draft?.revision ?? 0}</span>
                           </h2>
                           <div className="inline">
                             <button
@@ -1667,7 +1718,7 @@ function App() {
                           key={vid}
                           vehicle={current}
                           control={control}
-                          onClaim={() => setControl(true)}
+                          onClaim={claimControl}
                           onChanged={() =>
                             setNotice(
                               "Onboard fence verified. Use Fit all / zoom out to see the amber circle.",
@@ -2304,8 +2355,8 @@ function App() {
                       Run trial on {current.profile}
                     </button>
                     {!control && (
-                      <button onClick={() => setControl(true)}>
-                        Claim control for tests
+                      <button onClick={claimControl}>
+                        Enable vehicle controls for tests
                       </button>
                     )}
                     {!config.monitor_enabled && (
@@ -2348,6 +2399,12 @@ function App() {
                     )}
                     <div className="lab-guidance">
                       <strong>Flight phase matters</strong>
+                      <p>
+                        Custom watch cards still update during trials, but their
+                        notes, rule context and event-triggered AI calls are
+                        excluded. Trials use the configured periodic cadence to
+                        avoid operator-written fault hints.
+                      </p>
                       <p>
                         Trials preserve the current vehicle state. A motor or
                         wind fault on a disarmed stationary vehicle may be
@@ -2405,7 +2462,7 @@ function App() {
                     }
                   />
                   <span>
-                    {!config.monitor_enabled
+                    {!current.monitor_effective
                       ? "Live insights paused · chat is available"
                       : !current.monitor_enabled
                         ? "Live insights paused for this vehicle"
@@ -2433,6 +2490,30 @@ function App() {
                     )}
                   </button>
                 </div>
+                <WatchPanel
+                  key={vid}
+                  vehicle={current}
+                  metrics={config.watch_metrics}
+                  onSaved={(data: Json) => {
+                    setWork(data);
+                    setVehicles((items: Json[]) =>
+                      items.map((v) =>
+                        v.id === data.vehicle_id
+                          ? { ...v, watches: data.watches }
+                          : v,
+                      ),
+                    );
+                  }}
+                  onSettings={() => setTab("settings")}
+                  onAsk={() => {
+                    setInteractionMode(true);
+                    setInteractionTargets([vid]);
+                    setChat(
+                      "Help me set up watch rules for this vehicle. Ask me for the concerns, numerical thresholds and flight phases to watch. Alert and advise only; I choose vehicle actions.",
+                    );
+                    chatInput.current?.focus();
+                  }}
+                />
                 <div className="conversation">
                   {current.recording_error && (
                     <div className="persistent-alert critical">
@@ -2540,7 +2621,7 @@ function App() {
                       {m.change && (
                         <div className="change-card">
                           <strong>
-                            Draft revised · r{m.change.before.revision} → r
+                            Draft versions · {m.change.before.revision} →
                             {m.change.after.revision}
                           </strong>
                           <span>
@@ -2609,7 +2690,7 @@ function App() {
                   {work?.checks && draft?.waypoints.length > 0 && (
                     <div className="review-card">
                       <div className="card-kicker">
-                        PLAN REVIEW <span>REVISION {draft.revision}</span>
+                        PLAN REVIEW <span>VERSION {draft.revision}</span>
                       </div>
                       <h3>
                         {work.review ? "Review complete" : "Draft checks"}
@@ -2657,6 +2738,7 @@ function App() {
                         className="primary wide"
                         disabled={
                           !missionProgress(work, current).reviewed ||
+                          missionProgress(work, current).uploaded ||
                           !current.owned ||
                           !control ||
                           current.armed ||
@@ -2668,24 +2750,26 @@ function App() {
                         <Upload size={15} />
                         {busy === "upload"
                           ? "Uploading & verifying…"
-                          : `Upload reviewed r${draft.revision}`}
+                          : missionProgress(work, current).uploaded
+                            ? `Uploaded & verified · version ${draft.revision}`
+                            : `Upload mission · version ${draft.revision}`}
                       </button>
+                      <small className="upload-reason">
+                        {uploadReason(
+                          work,
+                          current,
+                          control,
+                          !!busy || chatBusy,
+                        )}
+                      </small>
                       {!work.review && (
                         <button className="wide" onClick={review}>
                           Review plan
                         </button>
                       )}
                       {!control && (
-                        <button
-                          className="wide"
-                          onClick={() =>
-                            guard(async () => {
-                              await api(`/vehicles/${vid}/lease`, "POST", {});
-                              setControl(true);
-                            })
-                          }
-                        >
-                          Claim vehicle control
+                        <button className="wide" onClick={claimControl}>
+                          Enable vehicle controls
                         </button>
                       )}
                     </div>
@@ -2694,7 +2778,9 @@ function App() {
                     <div className="active-plan">
                       <Check size={17} />
                       <div>
-                        <strong>Onboard mission r{work.active.revision}</strong>
+                        <strong>
+                          Onboard mission · version {work.active.revision}
+                        </strong>
                         <span>
                           Upload verified · intent pinned to this version
                         </span>
@@ -2852,7 +2938,7 @@ function App() {
                   <div className="chat-footer">
                     <span>
                       {interactionMode
-                        ? "Mission drafts + parameter proposals"
+                        ? "Mission drafts + parameters + watch rules"
                         : "Local draft tools only"}
                     </span>
                     <span>You approve vehicle actions</span>

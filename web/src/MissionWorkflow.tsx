@@ -5,7 +5,7 @@ import {
   Upload,
   Navigation,
 } from "lucide-react";
-import { missionProgress } from "./missionFlow.mjs";
+import { missionProgress, uploadReason } from "./missionFlow.mjs";
 
 export function MissionWorkflow({
   workspace,
@@ -52,7 +52,7 @@ export function MissionWorkflow({
       : vehicle.armed
         ? "Disarm before uploading a replacement mission."
         : !control
-          ? "Claim control of this vehicle, then upload the reviewed mission."
+          ? "Enable vehicle controls, then upload the reviewed mission."
           : "Upload this reviewed draft. Arming and starting are separate steps.";
   if (progress.stage === 3)
     next =
@@ -84,7 +84,11 @@ export function MissionWorkflow({
         ))}
       </div>
       <div className="workflow-next">
-        <span>{next}</span>
+        <span>
+          {progress.stage === 1 || progress.stage === 2
+            ? uploadReason(workspace, vehicle, control, busy)
+            : next}
+        </span>
         {progress.hasDraft && !progress.uploaded && (
           <button
             disabled={busy}
@@ -99,12 +103,13 @@ export function MissionWorkflow({
           !vehicle.armed &&
           !control && (
             <button disabled={busy} onClick={onClaimControl}>
-              Claim control
+              Enable vehicle controls
             </button>
           )}
         {workspace?.active && !progress.uploaded && (
           <small>
-            Onboard: r{workspace.active.revision} · Editing a separate draft
+            Onboard: version {workspace.active.revision} · Editing a separate
+            draft
           </small>
         )}
       </div>

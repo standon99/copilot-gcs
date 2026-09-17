@@ -68,3 +68,18 @@ test("task starters preserve vehicle-specific constraints and missing locations"
   assert.doesNotMatch(taskStarters("rover")[0].prompt, /take off|takeoff/);
   assert.match(taskStarters("plane")[1].prompt, /Do not assume hover/);
 });
+
+test("stale vehicle context cannot be shown as ready to upload", () => {
+  const ready = {
+    ...work,
+    review: { revision: 3, epoch: 2, upload_allowed: true },
+  };
+  assert.equal(
+    missionProgress(ready, { ...vehicle, review_current: false }).reviewed,
+    false,
+  );
+  assert.equal(
+    missionProgress({ ...ready, review_current: false }, vehicle).reviewed,
+    false,
+  );
+});

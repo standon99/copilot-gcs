@@ -13,6 +13,7 @@ export function SettingsPanel({
     [saved, setSaved] = useState<any>(null);
   const [defaults, setDefaults] = useState<any>({}),
     [models, setModels] = useState<string[]>([]);
+  const [contracts, setContracts] = useState<any>({});
   const [prompt, setPrompt] = useState("monitor"),
     [busy, setBusy] = useState("");
   const [error, setError] = useState(""),
@@ -23,6 +24,7 @@ export function SettingsPanel({
     setForm(data.preferences);
     setSaved(data.preferences);
     setDefaults(data.defaults);
+    setContracts(data.contracts || {});
   };
   const run = async (label: string, work: () => Promise<void>) => {
     setBusy(label);
@@ -76,7 +78,7 @@ export function SettingsPanel({
               checked={form.monitor_enabled}
               onChange={(e) => change({ monitor_enabled: e.target.checked })}
             />
-            Enable continuous assessments for all sessions
+            Enable automatic assessments (scheduled and watch-triggered)
           </label>
           <label>
             Wait between completed assessments (seconds)
@@ -99,9 +101,38 @@ export function SettingsPanel({
           </div>
           <p>
             {form.monitor_enabled
-              ? `At most about ${Math.ceil(3600 / Math.max(10, form.monitor_interval))} assessments per hour per enabled vehicle; ${activeCount} currently enabled sessions. Each assessment can use one repair request.`
+              ? `At most about ${Math.ceil(3600 / Math.max(10, form.monitor_interval))} scheduled assessments per hour per enabled vehicle; ${activeCount} currently enabled sessions. Watch triggers can add calls. Each assessment can use one repair request.`
               : "Automatic model calls will be paused globally. Chat and connection tests remain available when you request them."}{" "}
             Numerical telemetry checks continue.
+          </p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={form.watch_inference_enabled}
+              onChange={(e) =>
+                change({ watch_inference_enabled: e.target.checked })
+              }
+            />
+            Request AI advice when a watch rule triggers
+          </label>
+          <label>
+            Minimum time between watch-triggered assessments (seconds)
+            <input
+              type="number"
+              min="10"
+              max="3600"
+              value={form.watch_min_interval}
+              onChange={(e) =>
+                change({ watch_min_interval: Number(e.target.value) })
+              }
+            />
+          </label>
+          <p>
+            The first trigger bypasses the scheduled interval. Further triggers
+            are combined while an assessment is running or this limit applies.
+            Local alerts turn red immediately. Global or vehicle pause stops
+            both kinds of automatic call. Custom watches do not trigger AI
+            during diagnostics.
           </p>
           <label>
             Inference timeout (seconds)
@@ -247,6 +278,16 @@ export function SettingsPanel({
         >
           Restore this prompt to default
         </button>
+        {contracts[prompt] && (
+          <details>
+            <summary>Additional application contract (always appended)</summary>
+            <p>
+              This fixed contract describes watch-rule proposals. Your editable
+              prompt above is saved separately.
+            </p>
+            <pre>{contracts[prompt]}</pre>
+          </details>
+        )}
       </section>
       <div className="settings-save">
         <span>

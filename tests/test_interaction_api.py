@@ -10,11 +10,13 @@ from fastapi import HTTPException
 
 from backend import main
 from backend.planning import Draft
+from backend.watches import WatchBook
 
 
 def fake_vehicle():
     return SimpleNamespace(
         id="v",
+        watches=WatchBook(),
         closed=False,
         profile="copter",
         params={"LOG_DISARMED": {"value": 0, "type": 2}},

@@ -955,6 +955,125 @@ td input {
   scrollbar-width: thin;
   scrollbar-color: #3b515f transparent;
 }
+.watch-panel {
+  margin: 10px 12px 0;
+  border: 1px solid #365362;
+  border-radius: 7px;
+  background: #13232c;
+  flex-shrink: 0;
+  max-height: 310px;
+  overflow: auto;
+  scrollbar-width: thin;
+  font-size: 11px;
+}
+.watch-panel > details > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+.watch-panel > details > summary span {
+  font-size: 10px;
+  color: #91b0bf;
+}
+.watch-panel.has-alert {
+  border-color: #f77474;
+}
+.watch-panel.has-alert > details > summary span {
+  color: #ff9292;
+  font-weight: bold;
+}
+.watch-content {
+  padding: 0 12px 12px;
+}
+.watch-content p {
+  margin: 6px 0 10px;
+  line-height: 1.5;
+}
+.watch-content label,
+.watch-card small {
+  display: block;
+  margin: 7px 0;
+}
+.watch-content textarea,
+.watch-content input,
+.watch-content select {
+  width: 100%;
+  margin-top: 5px;
+}
+.watch-content textarea {
+  min-height: 56px;
+}
+.watch-content button,
+.watch-card button {
+  padding: 5px 7px;
+  font-size: 10px;
+}
+.watch-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.watch-editor {
+  border-top: 1px solid #365362;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.watch-card {
+  margin: 0 10px 10px;
+  border: 1px solid #456375;
+  border-left: 3px solid #619eb2;
+  border-radius: 5px;
+  padding: 10px;
+  line-height: 1.45;
+}
+.watch-card.triggered {
+  border-color: #ed7676;
+  background: #43252d;
+}
+.watch-card.unknown,
+.watch-card.pending {
+  border-color: #d3a45a;
+}
+.watch-card.disabled {
+  opacity: 0.8;
+}
+.watch-card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.watch-card-title b {
+  font-size: 9px;
+}
+.watch-card p {
+  margin: 6px 0;
+}
+.watch-card small {
+  color: #adc0ca;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.watch-card .watch-latched {
+  color: #ffaaaa;
+}
+.watch-card .button-row {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.control-help {
+  color: #aec2cc;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.upload-reason {
+  display: block;
+  margin: 8px 0;
+  color: #e8c78f;
+}
 .copilot-intro {
   padding: 10px 3px 25px;
   color: #72c8b6;

@@ -1,36 +1,31 @@
 # Actual application screenshots
 
-Captured 2026-09-17 from the production React frontend in Chrome at
-`http://127.0.0.1:8091`, backed by the real FastAPI server and two native Copter
-SITL instances. These show the Copilot GCS product iteration based on `0984521`.
+Updated 2026-09-17 from the production React frontend in Chrome at
+`http://127.0.0.1:8091`, using an isolated FastAPI runtime and native Plane, Copter
+and Rover SITL. These show the watch-rule iteration based on `8421fe8`.
 Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
 
 | File | Recorded state |
 | --- | --- |
-| `start.jpg` | Task-first onboarding with the editable point-inspection starter, before connecting |
-| `mission-planning.jpg` | Real AI-generated takeoff/waypoint/30-second-hold/RTL mission, after verified upload; selected target and 20/30 m altitudes visible |
-| `flight.jpg` | That mission returning from the inspection point in AUTO at 30 m, with live navigation cues, attitude instrument and the actual model response |
-| `settings.jpg` | Preserved cloud endpoint/model, global pause, 300-second interval and prompt selector during the mission's landing phase |
-| `diagnostics.jpg` | Actual scenario/seed/track controls during return/landing; no fault injected; pause and interval notices visible |
+| `start.jpg` | Unchanged task-first onboarding capture from the preceding iteration; still matches the start page |
+| `mission-planning.jpg` | Reviewed/uploaded version 2: 20 m takeoff, timed hold and RTL; visible red latched watch alert after landing |
+| `flight.jpg` | Operate after the flight: disarmed Copter, attitude instrument, explicit mode/arm/start guidance and earlier AI assessment marked stale |
+| `settings.jpg` | Separate scheduled interval (300 s) and event minimum spacing (60 s), saved in the isolated test runtime; global pause on |
+| `diagnostics.jpg` | Native simulation scenario/seed/track controls and custom-watch isolation guidance; no failure injection in this capture |
 
-The start-page brief survived launching two copters. The initial real model
-response asked for missing inspection details. After a protocol fix and backend
-restart, a fresh model request produced the mission shown here. Four explicit
-inference requests were used across the two sessions; monitoring stayed paused.
-No model output, vehicle state or UI was fabricated. See the
-[workflow validation](../product-workflow-validation.json) for the flown sequence.
+The Copter flew a reviewed home-position mission to 20 m, deliberately crossing
+a 15 m test ceiling. A real cloud assessment followed the trigger in 4.215 s,
+while the regular interval was one hour. The model initially produced zero
+coordinate placeholders; these were corrected to reported home before review
+and upload. The operator also entered the requested concern notes. The AGL watch
+had no valid source in the default simulator and showed unavailable in flight.
+Plane and Rover stayed disarmed. See [validation](../watch-validation.json).
 
-Numerical review, explicit upload and independent readback preceded normal
-mode/arm/mission-start controls. The first copter flew to the inspection point,
-held for 30 seconds and returned to land and disarm. The second stayed disarmed.
-The temporary server and all owned simulators were stopped afterward; saved
-settings were unchanged and port 8080 stayed off.
-
-The JPEGs are direct browser captures at 1796 × 1043, not edited telemetry or
-generated mockups. They contain no API key. Map attribution is retained. Demo
-coordinates are from Canberra SITL and illustrate navigation, not obstacle
-clearance or physical-flight readiness. Inspections here mean positioning;
-camera and payload control are not implemented.
+These are direct 1796 × 1043 JPEG browser captures. No model output or telemetry
+was fabricated. Map attribution is retained; coordinates are the Canberra SITL
+site. Screenshots contain no API key. They demonstrate workflow and monitoring,
+not propeller diagnosis, obstacle clearance or physical-flight validation.
+The separate user installation's saved inference preferences were preserved.
 
 ## Refresh procedure
 

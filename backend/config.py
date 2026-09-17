@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
-RUNTIME = ROOT / "runtime" / "copilot"
+RUNTIME = Path(os.getenv("COPILOT_RUNTIME_DIR", str(ROOT / "runtime" / "copilot"))).resolve()
 RUNTIME.mkdir(parents=True, exist_ok=True)
 PROFILES = {
     "copter": {

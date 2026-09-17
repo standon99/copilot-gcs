@@ -13,7 +13,7 @@
 - **Flight workspace:** satellite map, waypoint altitudes, geofences, live instruments, parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.
 - **Your model and usage:** Ollama cloud or a local endpoint; saved model, prompts and assessment frequency.
-- **Live insights and diagnostics:** check telemetry against mission intent and rehearse failure scenarios in simulation.
+- **Visible watch rules:** describe extra concerns in chat; review telemetry checks that turn red and request AI advice on a trigger. Rehearse failures in Diagnostics.
 
 Vehicle writes currently support **app-owned SITL only**. Uploads, parameter application and flight commands require explicit operator actions.
 
@@ -61,7 +61,7 @@ Open **http://127.0.0.1:8080**. For another port: `COPILOT_PORT=8091 ./start.sh`
 1. **Settings:** choose the model, assessment interval and automatic-monitoring state; save.
 2. Describe a task on the start page, choose a vehicle and **Continue in simulation**. Wait for home and telemetry.
 3. Send the brief to **Copilot**, or add waypoints in **Plan**. Refine and review the draft.
-4. **Claim control**, upload, then open **Operate** to arm and start separately. **Diagnostics** contains failure simulations.
+4. **Enable vehicle controls**, upload, then open **Operate** for the mode → arm → start steps. **Diagnostics** contains failure simulations.
 
 ## More
 

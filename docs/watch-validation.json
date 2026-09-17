@@ -1,0 +1,65 @@
+{
+  "date": "2026-09-17",
+  "base_revision": "8421fe8",
+  "profiles_started": [
+    "plane",
+    "copter",
+    "rover"
+  ],
+  "startup_valid_positions_near_canberra": true,
+  "python_tests": 109,
+  "frontend_tests": 8,
+  "model": "gpt-oss:120b",
+  "inference_calls": {
+    "interaction": 1,
+    "event_assessment": 1,
+    "repairs": 0
+  },
+  "scheduled_interval_s": 3600,
+  "trigger_to_observation_s": 0.0026,
+  "trigger_to_advice_s": 4.215,
+  "trigger_altitude_relative_m": 15.166,
+  "peak_altitude_relative_m": 20.004,
+  "mission_upload_readback": "verified",
+  "copter_landed_disarmed": true,
+  "plane_rover_remained_disarmed": true,
+  "agl_rule_in_air": "unavailable: default simulator supplied no valid source",
+  "model_identified_ceiling_breach": true,
+  "operator_corrections_before_flight": [
+    "Replaced model zero-coordinate navigation placeholders with reported home coordinates",
+    "Entered requested prop concern as visible notes; model left notes empty"
+  ],
+  "not_demonstrated": [
+    "Fault or propeller-damage diagnosis",
+    "Live rangefinder/terrain AGL breach; covered with unit fixtures only",
+    "Physical-vehicle control",
+    "Hard real-time response or safety guarantee"
+  ],
+  "first_valid_map_positions": [
+    {
+      "profile": "plane",
+      "seconds_after_first_message": 8.657,
+      "lat": -35.363261,
+      "lon": 149.1652299
+    },
+    {
+      "profile": "copter",
+      "seconds_after_first_message": 9.397,
+      "lat": -35.363081,
+      "lon": 149.16545
+    },
+    {
+      "profile": "rover",
+      "seconds_after_first_message": 9.323,
+      "lat": -35.362901,
+      "lon": 149.1652299
+    }
+  ],
+  "browser_checks": [
+    "Per-vehicle watch isolation",
+    "Create disabled manual rule; enable; red breach while AI globally paused",
+    "Acknowledge keeps active breach red; edit disables; remove",
+    "Save 300 s periodic and 60 s event settings in isolated runtime",
+    "Enable controls from fence pane obtains lease without arming"
+  ]
+}
