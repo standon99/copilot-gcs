@@ -11,13 +11,29 @@ cd /Users/stan/Documents/ardupilot_llm_copilot
 
 Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. The frontend, Python environment and three native simulator binaries are installed in this workspace.
 
-1. Select a vehicle profile and click **Launch SITL**. Multiple profiles can run together.
+1. Select a vehicle profile, choose a count (for example **copter → 2×**), and click **Launch SITL**. Up to six independent sessions can run together, including multiple copters. New sessions start at separate nearby positions. The selected vehicle is teal; other vehicles are amber. Use **Locate vehicle** or **Fit all** on the map.
 2. In **Flight**, click **Claim control** to enable operator commands. Wait for GPS/estimator initialization before arming.
-3. In **Mission**, click the map to add waypoints, drag them, or edit the table. Alternatively, enable **Allow requested draft edits** in chat and describe a route using coordinates or the current home.
+3. In **Mission**, click the map to add waypoints, drag them, or edit the table. Set **Altitude m** and choose **Relative home** or **AMSL**; press Enter or leave the field to save. Alternatively, enable **Allow requested draft edits** in chat and describe a route using coordinates or the current home.
 4. Add an optional mission statement and numerical constraints. **Interpret statement with copilot** proposes constraints for your review; accepting them revises the draft.
 5. **Check plan** runs numerical checks and requests a real model review. Resolve blockers, then use **Upload reviewed revision** in the copilot panel. Upload verifies readback and does not arm or launch.
 6. Arm and start separately. Copter supports GUIDED takeoff; Plane uses a properly constructed takeoff mission; Rover has no aerial commands.
-7. Use **Parameters** for staged writes, **Logs** for recordings/replay, and **SITL lab** for nominal/fault trials. Trials preserve the current vehicle phase.
+7. Use **Parameters** for staged writes, **Logs** for recordings/replay, and **Diagnostics / tests** for nominal/fault trials. Claim control, choose a failure and duration, then run the trial. Trials preserve the current vehicle phase; cancellation restores injected parameters where possible. Automatic assessments must be enabled to run a monitored trial, and the pane warns if the assessment interval exceeds the observation window.
+
+## Geofence
+
+In **Mission → Onboard geofence**, claim control while disarmed, select **Enable onboard fence**, enter the circle radius and (for aerial vehicles) maximum altitude above home, choose the breach action, then **Apply onboard fence**. Each setting is independently read back. The saved enabled circle appears as an amber dashed boundary; zoom out if necessary. The ceiling datum is explicitly set to above home in the firmware.
+
+This editor replaces fence-type selection with a home-centred circle and optional ceiling; it does not upload polygon fences. It disables automatic fence-enable behavior so the selected enabled/disabled state is explicit. Existing mission-intent exclusion polygons remain separate advisory constraints and are not onboard geofences. See [ArduPilot's fence documentation](https://ardupilot.org/copter/docs/common-geofencing-landing-page.html) for vehicle-specific behavior.
+
+## Inference settings
+
+**Settings** is available before connecting any vehicle. Configure the automatic assessment interval (10 seconds to 24 hours), pause automatic assessments globally, select a model, set an OpenAI-compatible API base URL, and edit the monitor/planner/intent system prompts. **Load models** queries the endpoint's model list; **Test connection** makes one inference request with the form values. **Save settings** activates and persists changes without a restart.
+
+For a local Ollama instance, use `http://localhost:11434/v1` and the name of an installed model. Its process must already be running. The backend never sends the cloud credential to the local or alternate provider. [Ollama API compatibility](https://docs.ollama.com/api/openai-compatibility)
+
+Preferences are stored in ignored `runtime/copilot/settings.json`, preserved by the installation/rebuild script. They override initial `.env` defaults after the first save. Prompt reset buttons restore the factory text into the editor; save to apply. Keep the JSON contracts when editing prompts. During active blinded trials, inference settings are locked to preserve the experimental configuration.
+
+The current installation is left **paused globally with a five-minute interval** to avoid ongoing usage. Enable automatic assessments and save when ready. The interval is measured after each completed assessment; each assessment may make one bounded repair request. Manual chat/tests also consume requests. Numerical telemetry checks continue while inference is paused.
 
 The `examples/` folder contains checked rectangle missions for all three profiles at the Canberra SITL site; import one through the Mission workspace.
 
@@ -32,7 +48,7 @@ git check-ignore .env      # should print .env
 git ls-files .env          # should print nothing
 ```
 
-Provider configuration is read on server start:
+Initial provider defaults and the private credential are read on server start; saved Settings preferences override the non-secret defaults:
 
 ```dotenv
 OLLAMA_API_KEY=your-key
@@ -87,6 +103,8 @@ The macOS build uses `--disable-networking` to avoid an optional embedded lwIP b
 # These intentionally arm owned SIMULATORS and stop them afterward:
 .venv/bin/python scripts/flight-smoke.py
 .venv/bin/python scripts/airborne-trial.py
+# Local stub only: settings, scheduler, GPS injection/cancel, and pause verification:
+.venv/bin/python scripts/settings-smoke.py
 ```
 
 The integration script launches missing profiles and performs real parameter, mission, mode and log-list protocol checks. It does not arm by default. The benchmark operates only on owned simulator sessions and preserves their current state. Reports go to ignored `runtime/copilot/`. Use `--profiles`, `--seeds` and `--scenarios` to choose repeated tests. The CLI waits for a preceding integration process's write lease to expire.

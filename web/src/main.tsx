@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
+import { api } from "./api";
+import { SettingsPanel } from "./SettingsPanel";
+import { FencePanel } from "./FencePanel";
 import { registerGroundStationTools } from "./webmcp";
 import * as maplibregl from "maplibre-gl";
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import {
   Plane,
   Map as MapIcon,
@@ -33,22 +37,10 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 
+maplibregl.setWorkerUrl(mapWorkerUrl);
+
 type Json = any;
-async function api(path: string, method = "GET", body?: Json) {
-  const r = await fetch("/api" + path, {
-    method,
-    headers: { "Content-Type": "application/json", "X-Copilot-Request": "1" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await r.json();
-  if (!r.ok)
-    throw Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : JSON.stringify(data.detail),
-    );
-  return data;
-}
+
 const fmt = (v: any, n = 1) => (v == null ? "—" : Number(v).toFixed(n));
 const clock = (ts: number) =>
   new Date(ts * 1000).toLocaleTimeString([], {
@@ -78,6 +70,8 @@ function download(name: string, data: Json) {
 
 function MapView({
   vehicle,
+  vehicles,
+  onSelectVehicle,
   draft,
   active,
   editing,
@@ -91,9 +85,18 @@ function MapView({
   const el = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map>(null),
     markers = useRef<maplibregl.Marker[]>([]),
-    vehicleMarker = useRef<maplibregl.Marker>(null);
+    vehicleMarkers = useRef<Record<string, maplibregl.Marker>>({}),
+    centered = useRef(false);
   const props = useRef<Json>({});
-  props.current = { vehicle, draft, editing, onAdd, onMove, setSelected };
+  props.current = {
+    vehicle,
+    draft,
+    editing,
+    onAdd,
+    onMove,
+    setSelected,
+    onSelectVehicle,
+  };
   const renderMap = useRef<() => void>(() => {});
   const [sat, setSat] = useState(true),
     [mapError, setMapError] = useState("");
@@ -161,10 +164,25 @@ function MapView({
         paint: { "fill-color": "#ff6d65", "fill-opacity": 0.23 },
       });
       m.addLayer({
+        id: "onboard-fence",
+        type: "line",
+        source: "route",
+        filter: ["==", ["get", "kind"], "fence"],
+        paint: {
+          "line-color": "#ffc46d",
+          "line-width": 3,
+          "line-dasharray": [3, 2],
+        },
+      });
+      m.addLayer({
         id: "route-line",
         type: "line",
         source: "route",
-        filter: ["==", ["geometry-type"], "LineString"],
+        filter: [
+          "all",
+          ["==", ["geometry-type"], "LineString"],
+          ["!=", ["get", "kind"], "fence"],
+        ],
         paint: {
           "line-color": [
             "case",
@@ -180,7 +198,9 @@ function MapView({
     });
     return () => {
       markers.current.forEach((x) => x.remove());
-      vehicleMarker.current?.remove();
+      Object.values(vehicleMarkers.current).forEach((marker) =>
+        marker.remove(),
+      );
       resizeObserver.disconnect();
       m.remove();
     };
@@ -219,6 +239,36 @@ function MapView({
         properties: { kind: "exclusion" },
         geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
       });
+    if (
+      vehicle?.home &&
+      vehicle?.fence?.enabled &&
+      vehicle.fence.circle &&
+      vehicle.fence.radius
+    ) {
+      const rad = Math.PI / 180,
+        lat = vehicle.home.lat * rad,
+        lon = vehicle.home.lon * rad;
+      const distance = vehicle.fence.radius / 6371000;
+      const ring = Array.from({ length: 97 }, (_, i) => {
+        const bearing = (i / 96) * Math.PI * 2;
+        const y = Math.asin(
+          Math.sin(lat) * Math.cos(distance) +
+            Math.cos(lat) * Math.sin(distance) * Math.cos(bearing),
+        );
+        const x =
+          lon +
+          Math.atan2(
+            Math.sin(bearing) * Math.sin(distance) * Math.cos(lat),
+            Math.cos(distance) - Math.sin(lat) * Math.sin(y),
+          );
+        return [x / rad, y / rad];
+      });
+      features.push({
+        type: "Feature",
+        properties: { kind: "fence" },
+        geometry: { type: "LineString", coordinates: ring },
+      });
+    }
     (m.getSource("route") as maplibregl.GeoJSONSource).setData({
       type: "FeatureCollection",
       features,
@@ -257,24 +307,68 @@ function MapView({
     }
     updateVehicle();
   };
+  const visibleVehicles = historical
+    ? [{ ...vehicle, id: "replay", position: historical.snapshot?.position }]
+    : (vehicles || [vehicle]).filter(Boolean);
+  const validPosition = (p: Json) =>
+    p &&
+    Number.isFinite(p.lat) &&
+    Number.isFinite(p.lon) &&
+    !(p.lat === 0 && p.lon === 0);
   const updateVehicle = () => {
     const m = map.current;
-    const position = historical?.snapshot?.position || vehicle?.position;
-    if (!m?.getSource("route") || !position) return;
-    if (!vehicleMarker.current) {
-      const el = document.createElement("div");
-      el.className = "vehicle-pin";
-      el.textContent = "▲";
-      vehicleMarker.current = new maplibregl.Marker({
-        element: el,
-        rotationAlignment: "map",
-      })
-        .setLngLat([position.lon, position.lat])
-        .addTo(m);
+    if (!m?.getSource("route")) return;
+    const ids = new Set<string>();
+    for (const v of visibleVehicles) {
+      if (!validPosition(v.position)) continue;
+      const id = v.id || "selected";
+      ids.add(id);
+      let marker = vehicleMarkers.current[id];
+      if (!marker) {
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "vehicle-pin";
+        const arrow = document.createElement("span");
+        arrow.className = "vehicle-arrow";
+        arrow.textContent = "▲";
+        const label = document.createElement("span");
+        label.className = "vehicle-label";
+        element.append(arrow, label);
+        element.onclick = (e) => {
+          e.stopPropagation();
+          if (!historical) props.current.onSelectVehicle?.(id);
+        };
+        marker = new maplibregl.Marker({ element })
+          .setLngLat([v.position.lon, v.position.lat])
+          .addTo(m);
+        vehicleMarkers.current[id] = marker;
+      }
+      const element = marker.getElement();
+      element.className =
+        "vehicle-pin" +
+        (v.id === vehicle?.id || historical ? " current" : "") +
+        (!historical && (v.heartbeat_age > 3 || v.gps_fix < 3) ? " stale" : "");
+      element.setAttribute(
+        "aria-label",
+        `${v.profile || "Vehicle"} ${id.slice(0, 4)} position`,
+      );
+      element.title = `${v.profile || "Vehicle"} ${id.slice(0, 4)} · ${v.position.lat.toFixed(6)}, ${v.position.lon.toFixed(6)} · ${fmt(v.position.relative)} m above home`;
+      (element.querySelector(".vehicle-arrow") as HTMLElement).style.transform =
+        `rotate(${v.heading || 0}deg)`;
+      element.querySelector(".vehicle-label")!.textContent =
+        `${(v.profile || "replay").toUpperCase()} ${historical ? "" : id.slice(0, 4)}`;
+      marker.setLngLat([v.position.lon, v.position.lat]);
     }
-    vehicleMarker.current
-      .setLngLat([position.lon, position.lat])
-      .setRotation(vehicle?.heading || 0);
+    for (const [id, marker] of Object.entries(vehicleMarkers.current))
+      if (!ids.has(id)) {
+        marker.remove();
+        delete vehicleMarkers.current[id];
+      }
+    const position = historical?.snapshot?.position || vehicle?.position;
+    if (!centered.current && validPosition(position)) {
+      m.jumpTo({ center: [position.lon, position.lat], zoom: 17 });
+      centered.current = true;
+    }
   };
   renderMap.current = updateMap;
   useEffect(updateMap, [
@@ -282,16 +376,14 @@ function MapView({
     active,
     vehicle?.home?.lat,
     vehicle?.home?.lon,
+    vehicle?.fence?.radius,
+    vehicle?.fence?.enabled,
+    vehicle?.fence?.circle,
     editing,
     selected,
     historical,
   ]);
-  useEffect(updateVehicle, [
-    vehicle?.position?.lat,
-    vehicle?.position?.lon,
-    vehicle?.heading,
-    historical,
-  ]);
+  useEffect(updateVehicle, [vehicles, vehicle, historical]);
   useEffect(() => {
     const m = map.current;
     if (m?.getLayer("sat")) {
@@ -319,15 +411,46 @@ function MapView({
           <button
             title="Center vehicle"
             onClick={() => {
-              const p = vehicle?.position || home;
+              const p =
+                historical?.snapshot?.position || vehicle?.position || home;
               map.current?.flyTo({ center: [p.lon, p.lat], zoom: 16 });
             }}
           >
-            <LocateFixed size={17} />
+            <LocateFixed size={17} /> Locate vehicle
           </button>
+          {!historical && (
+            <button
+              onClick={() => {
+                const points = visibleVehicles.filter((v: Json) =>
+                  validPosition(v.position),
+                );
+                if (!points.length) return;
+                const bounds = new maplibregl.LngLatBounds();
+                points.forEach((v: Json) =>
+                  bounds.extend([v.position.lon, v.position.lat]),
+                );
+                map.current?.fitBounds(bounds, { padding: 90, maxZoom: 18 });
+              }}
+            >
+              Fit all ({visibleVehicles.length})
+            </button>
+          )}
         </div>
       </div>
       {mapError && <div className="map-error">{mapError}</div>}
+      <div className="map-position">
+        {validPosition(historical?.snapshot?.position || vehicle?.position)
+          ? `${vehicle?.profile?.toUpperCase() || "VEHICLE"} ${vehicle?.id?.slice(0, 4) || ""} · ${fmt((historical?.snapshot?.position || vehicle.position).lat, 6)}, ${fmt((historical?.snapshot?.position || vehicle.position).lon, 6)} · ${fmt((historical?.snapshot?.position || vehicle.position).relative)} m relative${!historical && vehicle?.gps_fix < 3 ? " · waiting for GPS fix" : ""}`
+          : "Waiting for a valid vehicle position…"}
+      </div>
+      {vehicle?.fence?.enabled && vehicle.fence.circle && (
+        <div className="map-fence-label">
+          Onboard fence · {vehicle.fence.radius} m radius
+          {vehicle.fence.max_alt != null
+            ? ` · ${vehicle.fence.max_alt} m ceiling`
+            : ""}
+        </div>
+      )}
       <div className="map-note">
         {editing
           ? "Drag a waypoint to revise the draft."
@@ -355,6 +478,7 @@ function App() {
   const [chat, setChat] = useState(""),
     [editAuthorized, setEditAuthorized] = useState(false),
     [launchProfile, setLaunchProfile] = useState("copter"),
+    [launchCount, setLaunchCount] = useState(1),
     [chatBusy, setChatBusy] = useState(false);
   const [events, setEvents] = useState<Json[]>([]),
     [messages, setMessages] = useState<Json[]>([]),
@@ -369,8 +493,7 @@ function App() {
     [mode, setMode] = useState(""),
     [takeoffAlt, setTakeoffAlt] = useState(20),
     [logEntries, setLogEntries] = useState<Json[]>([]);
-  const [endpoint, setEndpoint] = useState("tcp:127.0.0.1:5760"),
-    [evidence, setEvidence] = useState<Json>(null);
+  const [evidence, setEvidence] = useState<Json>(null);
   const selectedVehicleRef = useRef(vid);
   selectedVehicleRef.current = vid;
   const setWork = (data: Json) => {
@@ -621,9 +744,14 @@ function App() {
   };
   const launch = () =>
     guard(async () => {
-      const v = await api("/sitl", "POST", { profile: launchProfile });
-      setVid(v.id);
-      setNotice(`${launchProfile} SITL started. Waiting for telemetry…`);
+      for (let i = 0; i < launchCount; i++) {
+        const v = await api("/sitl", "POST", { profile: launchProfile });
+        setVid(v.id);
+      }
+      setTab("flight");
+      setNotice(
+        `${launchCount} ${launchProfile} simulator(s) started at separate positions. Each vehicle has its own tab and controls.`,
+      );
     }, "launch");
   const selectedPoint = draft?.waypoints.find((w: Json) => w.id === selected);
   const replayMaxAltitude = Math.max(
@@ -678,7 +806,7 @@ function App() {
             ["plan", MapIcon, "Mission"],
             ["parameters", SlidersHorizontal, "Parameters"],
             ["logs", FileText, "Logs"],
-            ["lab", FlaskConical, "SITL lab"],
+            ["lab", FlaskConical, "Diagnostics"],
             ["settings", Settings, "Settings"],
           ].map(([id, Icon, label]: any) => (
             <button
@@ -725,6 +853,12 @@ function App() {
               )}
             </div>
             <div className="launch">
+              <button
+                onClick={() => setTab("lab")}
+                title="Open failure simulation pane"
+              >
+                <FlaskConical size={16} /> Diagnostics / tests
+              </button>
               <select
                 aria-label="Vehicle to launch"
                 value={launchProfile}
@@ -734,7 +868,24 @@ function App() {
                   <option key={p}>{p}</option>
                 ))}
               </select>
-              <button onClick={launch} disabled={busy === "launch"}>
+              <select
+                aria-label="Number of simulators"
+                title="Launch multiple independent vehicles"
+                value={launchCount}
+                onChange={(e) => setLaunchCount(+e.target.value)}
+              >
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n} ×
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={launch}
+                disabled={
+                  busy === "launch" || vehicles.length + launchCount > 6
+                }
+              >
                 <Plus size={16} />
                 {busy === "launch" ? "Starting…" : "Launch SITL"}
               </button>
@@ -814,7 +965,20 @@ function App() {
               </div>
             </div>
           )}
-          {!current && (
+          {tab === "settings" && (
+            <SettingsPanel
+              config={config}
+              vehicles={vehicles}
+              current={current}
+              onSaved={async () => setConfig(await api("/bootstrap"))}
+              onConnected={(v: Json) => {
+                setVid(v.id);
+                setTab("flight");
+              }}
+              onStopped={() => setVid("")}
+            />
+          )}
+          {!current && tab !== "settings" && (
             <div className="welcome">
               <div className="welcome-icon">
                 <Navigation size={38} />
@@ -862,7 +1026,7 @@ function App() {
               </small>
             </div>
           )}
-          {current && (
+          {current && tab !== "settings" && (
             <div className="workspace">
               <section className="content">
                 {["flight", "plan"].includes(tab) && (
@@ -870,6 +1034,8 @@ function App() {
                     <MapView
                       key={vid}
                       vehicle={current}
+                      vehicles={vehicles}
+                      onSelectVehicle={setVid}
                       draft={draft}
                       active={work?.active}
                       editing={tab === "plan"}
@@ -1086,6 +1252,12 @@ function App() {
                             </button>
                           </div>
                         </div>
+                        <p className="editor-help">
+                          Set each waypoint's <b>Altitude m</b> below, then
+                          choose <b>Relative home</b> or <b>AMSL</b>. Press
+                          Enter or leave the field to save the draft; upload the
+                          reviewed revision to change the onboard mission.
+                        </p>
                         <div className="waypoint-table">
                           <table>
                             <thead>
@@ -1128,12 +1300,23 @@ function App() {
                                   {["lat", "lon", "alt"].map((k) => (
                                     <td key={k}>
                                       <input
-                                        aria-label={k}
+                                        aria-label={`Waypoint ${i + 1} ${k === "alt" ? "altitude metres" : k}`}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter")
+                                            e.currentTarget.blur();
+                                        }}
                                         type="number"
                                         step={k === "alt" ? 1 : 0.00001}
                                         key={w.id + k + w[k]}
                                         defaultValue={w[k]}
                                         onBlur={(e) => {
+                                          if (!e.target.value.trim()) {
+                                            setError(
+                                              "Waypoint coordinates and altitude must be numbers.",
+                                            );
+                                            e.target.value = String(w[k]);
+                                            return;
+                                          }
                                           if (+e.target.value !== w[k])
                                             updatePoint(w.id, {
                                               [k]: +e.target.value,
@@ -1226,6 +1409,17 @@ function App() {
                             </button>
                           </div>
                         )}
+                        <FencePanel
+                          key={vid}
+                          vehicle={current}
+                          control={control}
+                          onClaim={() => setControl(true)}
+                          onChanged={() =>
+                            setNotice(
+                              "Onboard fence verified. Use Fit all / zoom out to see the amber circle.",
+                            )
+                          }
+                        />
                         {draft && (
                           <details className="intent">
                             <summary>
@@ -1831,6 +2025,7 @@ function App() {
                       className="primary"
                       disabled={
                         !control ||
+                        !config.monitor_enabled ||
                         !!(
                           current.trial &&
                           !["complete", "failed", "cancelled"].includes(
@@ -1855,6 +2050,49 @@ function App() {
                       <Play size={16} />
                       Run trial on {current.profile}
                     </button>
+                    {!control && (
+                      <button onClick={() => setControl(true)}>
+                        Claim control for tests
+                      </button>
+                    )}
+                    {!config.monitor_enabled && (
+                      <p>
+                        Automatic assessments are paused globally. Enable them
+                        in Settings to run a monitored trial.
+                      </p>
+                    )}
+                    {current.trial &&
+                      !["complete", "failed", "cancelled"].includes(
+                        current.trial.state,
+                      ) && (
+                        <button
+                          className="danger"
+                          disabled={!control}
+                          onClick={() =>
+                            guard(async () => {
+                              await api(
+                                `/vehicles/${vid}/trials/cancel`,
+                                "POST",
+                                {},
+                              );
+                              setNotice(
+                                "Trial cancelled; injected parameters restored where possible.",
+                              );
+                            })
+                          }
+                        >
+                          Cancel trial & restore
+                        </button>
+                      )}
+                    {duration < config.monitor_interval && (
+                      <p className="editor-help">
+                        Your {config.monitor_interval}s assessment delay exceeds
+                        this {duration}s observation window. Increase the trial
+                        duration or lower the delay in Settings to collect
+                        assessments after the fault. Trials do not silently
+                        increase your request rate.
+                      </p>
+                    )}
                     <div className="lab-guidance">
                       <strong>Flight phase matters</strong>
                       <p>
@@ -1888,123 +2126,6 @@ function App() {
                     )}
                   </div>
                 )}
-                {tab === "settings" && (
-                  <div className="page">
-                    <span className="eyebrow">LOCAL SYSTEM</span>
-                    <h1>Connections & capabilities</h1>
-                    <div className="settings-grid">
-                      <section>
-                        <h2>Inference provider</h2>
-                        <dl>
-                          <dt>Endpoint</dt>
-                          <dd>{config.provider}</dd>
-                          <dt>Model</dt>
-                          <dd>{config.model}</dd>
-                          <dt>Credential</dt>
-                          <dd>
-                            {config.configured
-                              ? "Configured on backend"
-                              : "Missing"}
-                          </dd>
-                          <dt>Automatic cadence</dt>
-                          <dd>
-                            {config.monitor_interval} seconds after completion
-                          </dd>
-                        </dl>
-                        <p>
-                          Change the ignored <code>.env</code> file and restart
-                          the server. Credentials never enter the browser or
-                          model observation payload.
-                        </p>
-                      </section>
-                      <section>
-                        <h2>Read-only MAVLink connection</h2>
-                        <label>
-                          Endpoint
-                          <input
-                            value={endpoint}
-                            onChange={(e) => setEndpoint(e.target.value)}
-                          />
-                        </label>
-                        <label>
-                          Profile
-                          <select
-                            value={launchProfile}
-                            onChange={(e) => setLaunchProfile(e.target.value)}
-                          >
-                            {Object.keys(config.profiles).map((p) => (
-                              <option key={p}>{p}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <button
-                          onClick={() =>
-                            guard(async () => {
-                              const v = await api("/connections", "POST", {
-                                profile: launchProfile,
-                                endpoint,
-                              });
-                              setVid(v.id);
-                            })
-                          }
-                        >
-                          Connect local transport
-                        </button>
-                      </section>
-                      <section>
-                        <h2>Scope</h2>
-                        <p>
-                          Copter, conventional Plane and Rover. Parameter
-                          transactions, supported missions, live telemetry,
-                          logs, replay and isolated AI inference.
-                        </p>
-                        <p>
-                          Terrain/obstacle clearance, fixed-wing performance,
-                          firmware flashing, calibration wizards and
-                          physical-vehicle operation are not validated in this
-                          release.
-                        </p>
-                      </section>
-                      <section>
-                        <h2>Selected session</h2>
-                        <dl>
-                          <dt>ID</dt>
-                          <dd>{vid}</dd>
-                          <dt>Link</dt>
-                          <dd>{current.endpoint}</dd>
-                          <dt>Boot epoch</dt>
-                          <dd>{current.epoch}</dd>
-                          <dt>Recording</dt>
-                          <dd>
-                            {current.recording ? "Active" : "Quota reached"}
-                          </dd>
-                        </dl>
-                        <button
-                          className="danger"
-                          onClick={() =>
-                            guard(async () => {
-                              await api(`/vehicles/${vid}`, "DELETE");
-                              setVid("");
-                            })
-                          }
-                        >
-                          Stop & disconnect {current.profile}
-                        </button>
-                      </section>
-                    </div>
-                    <h2>Telemetry freshness</h2>
-                    <div className="coverage">
-                      {Object.entries(current.coverage).map(([k, v]: any) => (
-                        <div key={k}>
-                          <code>{k}</code>
-                          <strong className={v > 5 ? "amber" : ""}>
-                            {fmt(v)} s
-                          </strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </section>
               <aside className="copilot">
                 <div className="copilot-heading">
@@ -2028,7 +2149,13 @@ function App() {
                         : "")
                     }
                   />
-                  <span>{current.monitor_status}</span>
+                  <span>
+                    {!config.monitor_enabled
+                      ? "Paused globally in Settings"
+                      : !current.monitor_enabled
+                        ? "Paused for this vehicle"
+                        : current.monitor_status}
+                  </span>
                   <button
                     title={
                       current.monitor_enabled

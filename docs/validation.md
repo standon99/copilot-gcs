@@ -1,5 +1,19 @@
 # Validation record
 
+## Settings, geofence and map follow-up
+
+The follow-up implementation passed **44 automated tests** and the production frontend build. New tests cover atomic settings persistence/revision conflicts, endpoint validation, cloud-key origin scoping, effective custom prompts/model selection, local inference and model discovery through the sandbox, denial of other loopback ports, and geofence datum/conflict handling.
+
+Two real Copter SITL sessions reported distinct positions. A 120 m circle and 80 m above-home ceiling were written and independently read back, with `FENCE_TYPE=3`, `FENCE_ALT_MAX_TP=1`, `FENCE_ENABLE=1` and the chosen recovery action. This validates configuration transfer; a new fence-breach flight campaign was not run.
+
+Chrome UI checks verified launching two copters with the count selector, labelled vehicle markers, the amber fence boundary, saving a 42 m waypoint altitude, the editable Settings screen, a five-minute interval save, a prompt edit/save, and the Diagnostics pane. Real Ollama model discovery returned 20 models; the explicit cloud connection test returned valid JSON in 0.87 s. Both the edited prompt and cadence survived an actual backend restart. The test prompt suffix was restored to factory text afterward. Automatic inference remains paused to avoid ongoing usage.
+
+Browser inspection found that MapLibre v6 needed its worker emitted as a separate Vite bundle. Without it, raster imagery and HTML markers rendered but vector overlays did not. The fix follows [MapLibre's Vite setup](https://maplibre.org/maplibre-gl-js/docs/); the fence boundary was then visually confirmed.
+
+`scripts/settings-smoke.py` also passed against the live API with a local response stub: the scheduler used the selected local model/endpoint, settings changes were blocked during an active trial, GPS injection was observed on Rover, cancellation restored the original simulator parameter, and global pause stopped subsequent requests. Four stub requests and zero cloud calls were made; this was a transport/lifecycle test, not an LLM accuracy trial. The previous cloud preferences were restored afterward.
+
+The original release evidence below remains historical; its unavailable-browser statement no longer describes the follow-up checks above.
+
 Local implementation tested on 2026-09-17, macOS Apple Silicon. Firmware is pinned to `dbe792162d06cab66c3475fd5556bf7a120f119e`; Copter, Plane and Rover report 4.7.1. Real inference used Ollama's cloud endpoint and `gpt-oss:120b`. No physical vehicle was operated.
 
 ## Application and protocol evidence

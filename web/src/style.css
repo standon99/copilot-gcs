@@ -544,13 +544,134 @@ main {
   outline: 5px solid #65dfcd44;
 }
 .vehicle-pin {
-  color: #fff;
-  border: 1px solid #54777e;
-  background: #17343ac9;
-  padding: 6px 8px;
+  z-index: 100;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: #071c27;
+  border: 3px solid #fff;
+  background: #ffbc65;
   border-radius: 50%;
-  font-size: 19px;
-  text-shadow: 0 0 8px #bffff6;
+  box-shadow: 0 2px 10px #000d;
+  overflow: visible;
+}
+.vehicle-pin.current {
+  background: #54efd2;
+  z-index: 110;
+  outline: 5px solid #54efd24a;
+}
+.vehicle-pin.stale {
+  background: #a6aeb5;
+}
+.vehicle-arrow {
+  display: block;
+  font-size: 23px;
+  line-height: 1;
+}
+.vehicle-label {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #081724ed;
+  color: #fff;
+  border: 1px solid #608495;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: 10px monospace;
+  white-space: nowrap;
+}
+.waypoint-pin {
+  z-index: 30;
+}
+.home-pin {
+  z-index: 10;
+}
+.map-position {
+  position: absolute;
+  bottom: 40px;
+  left: 56px;
+  max-width: calc(100% - 80px);
+  background: #0b1b2aeb;
+  color: #e5fff9;
+  padding: 6px 9px;
+  font: 10px monospace;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.map-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.settings-page {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.settings-page h1 {
+  margin-bottom: 12px;
+}
+.settings-save {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  position: sticky;
+  bottom: 0;
+  padding: 15px;
+  margin: 20px 0;
+  background: #101f2cf5;
+  border: 1px solid #416272;
+  z-index: 2;
+}
+.settings-save span {
+  margin-right: auto;
+  color: #b2c7d4;
+  font-size: 12px;
+}
+.prompt-editor,
+.fence-editor {
+  background: #192b36;
+  border: 1px solid #304856;
+  border-radius: 5px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.prompt-editor textarea {
+  width: 100%;
+  min-height: 300px;
+  resize: vertical;
+  font: 12px/1.6 monospace;
+  margin: 12px 0;
+}
+.prompt-editor p,
+.fence-editor p,
+.editor-help {
+  font-size: 12px;
+  color: #a3bac9;
+  line-height: 1.6;
+}
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+label.check-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+label.check-row input {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  margin: 0;
 }
 .maplibregl-ctrl-attrib {
   font-size: 9px !important;
@@ -1865,4 +1986,18 @@ footer .divider {
   background: #4b3f2bed;
   color: #ffe1b3;
   font: 11px monospace;
+}
+
+.map-fence-label {
+  position: absolute;
+  top: 60px;
+  left: 18px;
+  font-size: 11px;
+  color: #ffc46d;
+  background: #15232ced;
+  padding: 5px 8px;
+  border-radius: 3px;
+}
+.map-top {
+  z-index: 120;
 }

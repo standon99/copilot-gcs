@@ -18,12 +18,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .config import API_KEY, BASE_URL, HOME, MODEL, MONITOR_INTERVAL, PROFILES, ROOT, RUNTIME
+from .config import HOME, PROFILES, ROOT, RUNTIME
+from .fence import FenceEdit, fence_changes, fence_snapshot
 from .gateway import gateway_main
 from .lab import CATALOG, score
 from .metadata import FIRMWARE_COMMIT, metadata, validate_parameter
 from .planning import Draft, Intent, apply_patch, check, revise
-from .provider import INTENT_SYSTEM, PLANNER_SYSTEM, Provider, sandbox_command
+from .provider import Provider, sandbox_command
+from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
 from .store import Store
 from .telemetry import Telemetry, finite
 
@@ -34,6 +36,7 @@ vehicles = {}
 jobs = {}
 sessions = {}
 tasks = set()
+launch_lock = asyncio.Lock()
 
 
 def background(coro):
@@ -78,11 +81,12 @@ class Vehicle:
         self.monitor_track = "operational"
         self.assessment = None
         self.monitor_status = "waiting"
-        self.next_monitor = time.time() + 15
+        self.next_monitor = time.time() + settings.value.monitor_interval
         self.inference = None
         self.chat = []
         self.predictions = []
         self.fault_restore = {}
+        self.fence_busy = False
         self.trial = None
         self.trial_task = None
         self.closed = False
@@ -102,12 +106,15 @@ class Vehicle:
             "parameters": len(self.params),
             "draft_revision": self.draft["revision"],
             "active_revision": self.active["revision"] if self.active else None,
+            "fence": fence_snapshot(self.params),
             "rules": self.telemetry.rules(self.active),
             "assessment": self.assessment,
             "assessment_stale": self.assessment is None
             or time.time() - self.assessment["observed_at"] > 45,
             "monitor_status": self.monitor_status,
             "monitor_enabled": self.monitor_enabled,
+            "monitor_effective": self.monitor_enabled and settings.value.monitor_enabled,
+            "next_monitor_at": self.next_monitor,
             "monitor_track": self.monitor_track,
             "lease_remaining": max(0, round(self.lease_until - time.time())),
             "recording": self.recording,
@@ -259,7 +266,7 @@ async def monitor(v):
         except OSError:
             v.recording_error = "Inference audit recording failed"
     finally:
-        v.next_monitor = time.time() + MONITOR_INTERVAL
+        v.next_monitor = time.time() + settings.value.monitor_interval
         v.inference = None
 
 
@@ -329,6 +336,7 @@ async def pump():
                         )
             if (
                 v.monitor_enabled
+                and settings.value.monitor_enabled
                 and not v.inference
                 and time.time() >= v.next_monitor
                 and v.telemetry.latest
@@ -406,12 +414,14 @@ async def bootstrap(request: Request):
     response = JSONResponse(
         {
             "profiles": PROFILES,
-            "model": MODEL,
-            "provider": BASE_URL,
-            "configured": bool(API_KEY),
+            "model": settings.value.model,
+            "provider": settings.value.base_url,
+            "configured": bool(credential_for(settings.value.base_url))
+            or settings.value.base_url != "https://ollama.com/v1",
             "filesystem_isolated": sandbox_command()[1],
             "home": HOME,
-            "monitor_interval": MONITOR_INTERVAL,
+            "monitor_interval": settings.value.monitor_interval,
+            "monitor_enabled": settings.value.monitor_enabled,
             "capabilities": {
                 "owned_sitl_write": True,
                 "external_write": False,
@@ -432,12 +442,78 @@ async def vehicle_list():
     return [v.snapshot() for v in vehicles.values()]
 
 
+@app.get("/api/settings")
+async def read_settings():
+    return {
+        "preferences": settings.get(),
+        "defaults": DEFAULT_PROMPTS,
+        "credential_attached": bool(credential_for(settings.value.base_url)),
+    }
+
+
+@app.put("/api/settings")
+async def save_settings(body: Preferences):
+    if any(v.trial_task and not v.trial_task.done() for v in vehicles.values()):
+        raise HTTPException(
+            409, "Finish or cancel active trials before changing inference settings"
+        )
+    try:
+        settings.save(body)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    pending = [v.inference for v in vehicles.values() if v.inference and not v.inference.done()]
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    for v in vehicles.values():
+        v.next_monitor = time.time() + settings.value.monitor_interval
+    event(
+        None,
+        "inference_settings_saved",
+        {
+            "revision": settings.value.revision,
+            "model": settings.value.model,
+            "monitor_enabled": settings.value.monitor_enabled,
+        },
+    )
+    return await read_settings()
+
+
+@app.post("/api/settings/models")
+async def provider_models(body: Preferences):
+    try:
+        models, _ = await provider.complete("", {}, options=body.model_dump(), operation="models")
+        return {"models": models}
+    except Exception as exc:
+        raise HTTPException(502, str(exc))
+
+
+@app.post("/api/settings/test")
+async def provider_test(body: Preferences):
+    try:
+        result, meta = await provider.complete(
+            'Return only JSON {"ok":true}. This is a connection test.',
+            {},
+            options=body.model_dump(),
+        )
+        if result.get("ok") is not True:
+            raise ValueError("Model responded but did not return the required JSON")
+        return {"ok": True, **meta}
+    except Exception as exc:
+        raise HTTPException(502, str(exc))
+
+
 class Launch(BaseModel):
     profile: str
 
 
 @app.post("/api/sitl")
 async def launch(body: Launch):
+    async with launch_lock:
+        return await launch_owned(body)
+
+
+async def launch_owned(body: Launch):
     if body.profile not in PROFILES:
         raise HTTPException(422, "Unknown profile")
     if len(vehicles) >= 6:
@@ -463,6 +539,13 @@ async def launch(body: Launch):
         if not any(s in k for s in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
     }
     output = (folder / "sitl.log").open("wb")
+    used_slots = {getattr(v, "spawn_slot", None) for v in vehicles.values()}
+    slot = next(i for i in range(6) if i not in used_slots)
+    spawn_home = {
+        **HOME,
+        "lat": HOME["lat"] + slot * 0.00018,
+        "lon": HOME["lon"] + (slot % 2) * 0.00022,
+    }
     sim = subprocess.Popen(
         [
             str(binary),
@@ -471,7 +554,7 @@ async def launch(body: Launch):
             "--speedup",
             "1",
             "--home",
-            f"{HOME['lat']},{HOME['lon']},{HOME['alt']},353",
+            f"{spawn_home['lat']},{spawn_home['lon']},{spawn_home['alt']},353",
             "--defaults",
             str(ROOT / "ardupilot" / p["defaults"]),
             "--serial0",
@@ -496,6 +579,7 @@ async def launch(body: Launch):
     if sim.poll() is not None:
         raise HTTPException(500, "SITL exited during launch; inspect local simulator log")
     v = Vehicle(ident, body.profile, f"tcp:127.0.0.1:{port}", True, sim)
+    v.spawn_slot = slot
     vehicles[ident] = v
     event(
         ident, "session_started", {"profile": body.profile, "endpoint": v.endpoint, "owned": True}
@@ -670,6 +754,8 @@ async def action(vid: str, body: Action, request: Request):
     v = vehicle(vid)
     authorize(v, request)
     s = v.telemetry.snapshot()
+    if v.fence_busy and body.action in ("arm", "start", "takeoff"):
+        raise HTTPException(409, "Wait for the fence update to finish")
     if body.action not in (
         "arm",
         "mode",
@@ -712,6 +798,64 @@ async def parameters(vid: str):
     }
 
 
+@app.get("/api/vehicles/{vid}/fence")
+async def read_fence(vid: str):
+    v = vehicle(vid)
+    return {
+        **fence_snapshot(v.params),
+        "vehicle_id": vid,
+        "actions": metadata(v.profile).get("FENCE_ACTION", {}).get("Values", {}),
+    }
+
+
+@app.put("/api/vehicles/{vid}/fence")
+async def write_fence(vid: str, body: FenceEdit, request: Request):
+    v = vehicle(vid)
+    authorize(v, request)
+    if (
+        v.telemetry.snapshot()["armed"]
+        or v.fence_busy
+        or (v.trial_task and not v.trial_task.done())
+    ):
+        raise HTTPException(409, "Disarm and finish other fence/trial operations first")
+    try:
+        changes = fence_changes(v.profile, v.params, body)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    applied = []
+    v.fence_busy = True
+    try:
+        # Disable first while disarmed; enable only after every selected setting verifies.
+        sequence = [("FENCE_ENABLE", 0), *changes.items()]
+        expected = dict(body.expected)
+        for name, value in sequence:
+            if v.closed:
+                raise RuntimeError("Session stopped")
+            if expected[name] != value:
+                await await_job(
+                    submit(
+                        v,
+                        "parameter_write",
+                        {"name": name, "value": value, "expected": expected[name]},
+                    )
+                )
+                applied.append({"name": name, "value": value})
+                expected[name] = value
+        event(vid, "fence_verified", {"applied": applied})
+        return {"status": "verified", "applied": applied, **await read_fence(vid)}
+    except Exception as exc:
+        raise HTTPException(
+            409,
+            {
+                "message": "Fence update incomplete; inspect and reload before retrying",
+                "error": str(exc),
+                "applied": applied,
+            },
+        )
+    finally:
+        v.fence_busy = False
+
+
 class ParameterEdit(BaseModel):
     name: str = Field(pattern=r"^[A-Z0-9_]{1,16}$")
     value: float = Field(allow_inf_nan=False)
@@ -723,6 +867,8 @@ class ParameterEdit(BaseModel):
 async def parameter_write(vid: str, body: ParameterEdit, request: Request):
     v = vehicle(vid)
     authorize(v, request)
+    if v.fence_busy and body.name.startswith("FENCE_"):
+        raise HTTPException(409, "A fence update is in progress")
     if body.name.startswith("SIM_"):
         raise HTTPException(403, "Use the separate SITL laboratory for simulator parameters")
     if body.name not in v.params:
@@ -768,7 +914,7 @@ async def chat(vid: str, body: Chat):
         "previous_messages": v.chat[-10:],
     }
     try:
-        result, meta = await provider.complete(PLANNER_SYSTEM, payload)
+        result, meta = await provider.complete(settings.value.prompts.planner, payload)
         if not isinstance(result.get("reply"), str) or len(result["reply"]) > 16000:
             raise ValueError("Invalid planner reply")
         ops = result.get("operations", [])
@@ -810,7 +956,8 @@ async def interpret_intent(vid: str):
         raise HTTPException(422, "Write a mission statement first")
     try:
         raw, meta = await provider.complete(
-            INTENT_SYSTEM, {"profile": v.profile, "statement": brief, "existing": v.draft["intent"]}
+            settings.value.prompts.intent,
+            {"profile": v.profile, "statement": brief, "existing": v.draft["intent"]},
         )
         intent = Intent.model_validate(raw["intent"]).model_dump()
         intent["brief"] = brief
@@ -843,11 +990,14 @@ async def accept_intent(vid: str, body: dict):
 @app.post("/api/vehicles/{vid}/monitor")
 async def monitoring(vid: str, body: dict):
     v = vehicle(vid)
-    if v.trial and v.trial["state"] not in ("complete", "failed"):
+    if v.trial_task and not v.trial_task.done():
         raise HTTPException(409, "Monitoring is locked during a trial")
     v.monitor_enabled = bool(body.get("enabled", True))
     v.monitor_track = "telemetry" if body.get("track") == "telemetry" else "operational"
-    v.next_monitor = 0
+    if not v.monitor_enabled and v.inference:
+        v.inference.cancel()
+        await asyncio.gather(v.inference, return_exceptions=True)
+    v.next_monitor = time.time() + settings.value.monitor_interval
     return v.snapshot()
 
 
@@ -1048,6 +1198,10 @@ async def run_trial(v, body):
 async def trial_start(vid: str, body: Trial, request: Request):
     v = vehicle(vid)
     authorize(v, request)
+    if not settings.value.monitor_enabled:
+        raise HTTPException(
+            409, "Enable automatic assessments in Settings before a monitored trial"
+        )
     if body.scenario not in CATALOG or v.profile not in CATALOG[body.scenario]["profiles"]:
         raise HTTPException(422, "Scenario unavailable for this vehicle")
     if v.trial_task and not v.trial_task.done():

@@ -14,9 +14,27 @@ def main():
     request = json.loads(sys.stdin.read())
     try:
         with httpx.Client(timeout=request["timeout"], trust_env=False) as client:
+            headers = (
+                {"Authorization": "Bearer " + request["api_key"]} if request["api_key"] else {}
+            )
+            if request.get("operation") == "models":
+                r = client.get(request["base_url"] + "/models", headers=headers)
+                if r.status_code != 200:
+                    print(json.dumps({"error": f"Provider HTTP {r.status_code}"}))
+                    return
+                print(
+                    json.dumps(
+                        {
+                            "models": [
+                                x["id"] for x in r.json()["data"] if isinstance(x.get("id"), str)
+                            ]
+                        }
+                    )
+                )
+                return
             r = client.post(
                 request["base_url"] + "/chat/completions",
-                headers={"Authorization": "Bearer " + request["api_key"]},
+                headers=headers,
                 json={
                     "model": request["model"],
                     "messages": request["messages"],
