@@ -880,7 +880,7 @@ function App() {
       <header>
         <div className="brand">
           <div className="brand-symbol">
-            <Navigation size={22} />
+            <img src="/icon.svg" alt="" width="38" height="38" />
           </div>
           <div>
             <strong>

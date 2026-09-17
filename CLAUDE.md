@@ -24,8 +24,10 @@ relevant design, implementation and validation documents before making changes.
   configuration, supported vehicles, commands, API contracts, security
   boundaries, tests, screenshots, or limitations change.
 - The README is the public entry point: it must describe what is implemented,
-  how to install from a fresh clone, how to operate it, and what remains planned.
-  Preserve a clear distinction between tested behavior and roadmap goals.
+  key features and the shortest useful setup/run path. Keep it concise; put
+  detailed setup, operating instructions and troubleshooting in `docs/`. Do not
+  add research-question or roadmap/build-next sections to the README. Preserve
+  the distinction between shipped behavior and design goals in the design docs.
 - Keep `docs/implementation.md` aligned with the code and `docs/validation.md`
   aligned with actual evidence. Label older validation records and design
   baselines as historical; do not silently rewrite experimental results.
@@ -67,7 +69,7 @@ git diff --check
 .venv/bin/python scripts/check-secrets.py --staged
 ```
 
-Use Node 22+ for frontend commands. See the README for the optional local Node
+Use Node 22+ for frontend commands. See `docs/setup.md` for the optional local Node
 installation and the separate native SITL prerequisites. Documentation-only
 changes need link/command/image checks; do not launch paid benchmark campaigns
 for them. The MIT license applies to this repository's original code; preserve

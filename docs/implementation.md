@@ -2,6 +2,9 @@
 
 The repository now contains a local research ground station, native Copter/Plane/Rover SITL integration, and live Ollama inference. The original [design](design.md) remains the broader design baseline. This document describes the actual implementation rather than treating every proposed acceptance target as achieved.
 
+The project icon is shared by the app header, browser favicon and README. Vector
+and PNG assets plus a GitHub social-preview image are described in [brand assets](brand/README.md).
+
 ## Run
 
 Start `./start.sh`, then open `http://127.0.0.1:8080`. The production React bundle is served by the same FastAPI origin. Launch simulators from the vehicle bar. Each simulator has its own directory, MAVLink connection, TCP port, RC-input UDP port, gateway process, observation history, mission draft, and command queue. The system deliberately supports overlapping MAVLink system IDs on **separate** connections.

@@ -2,22 +2,23 @@
 
 Captured 2026-09-17 from the production React frontend in Chrome at
 `http://127.0.0.1:8091`, backed by the real FastAPI server and two native Copter
-SITL instances. Application code: commit `e0ce579`; the documentation/setup-only
-iteration adds these images. Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
+SITL instances. Refreshed with the project icon in the branding/concise-README
+iteration based on `91a1877`. Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
 
 | File | Recorded state |
 | --- | --- |
 | `flight.jpg` | First copter holding at 30 m above home in AUTO after takeoff and waypoint transit; second copter disarmed; live target ring and flight instrument |
-| `mission-planning.jpg` | Real model-created local takeoff/waypoint/unlimited-loiter draft, editable altitudes/datums, target selection and pending parameter proposal |
+| `mission-planning.jpg` | Operator-created local takeoff/waypoint/unlimited-loiter draft, editable altitudes/datums, vehicle target selection and numerical draft checks |
 | `settings.jpg` | Actual saved cloud endpoint/model, global pause, 300-second assessment interval and system-prompt selector |
-| `diagnostics.jpg` | Actual scenario/seed/track controls; trial not running; pause/interval warnings visible |
+| `diagnostics.jpg` | Actual scenario/seed/track controls during GUIDED climb; trial not running; pause/interval warnings visible |
 
-One real Ollama `gpt-oss:120b` request created the displayed mission and
-LOG_DISARMED proposal. The operator subsequently applied the proposal, reviewed
-and uploaded the mission, and used normal mode/arm/takeoff/start controls. The
-model did not operate a vehicle. Automatic monitoring stayed paused, and no
-failure was injected to produce these screenshots. The test copter was landed
-and the temporary server/simulators stopped after capture.
+The local draft was created through the application's API, then reviewed and
+uploaded with readback verification. Normal mode/arm/takeoff/start controls
+flew the first simulator. Automatic monitoring stayed paused; this refresh used
+no inference requests and shows no model-generated responses or proposals. No
+failure was injected. The test copter was landed and the temporary server and
+simulators stopped after capture. The earlier model-generated demonstration
+remains documented in the historical validation record and Git history.
 
 The JPEG files are direct browser screenshots, not generated mockups or edited
 telemetry. They include no API key or private environment file. Satellite-map
@@ -43,3 +44,21 @@ or detection accuracy.
    deliberately changed for capture.
 7. Commit the refreshed images and affected README/docs together. Do not stage
    raw runtime recordings, private trial truth or `.env`.
+
+## Gallery
+
+### Flight
+
+![Flight view](flight.jpg)
+
+### Mission planning
+
+![Mission editor](mission-planning.jpg)
+
+### Settings
+
+![Inference settings](settings.jpg)
+
+### Diagnostics
+
+![Failure laboratory](diagnostics.jpg)

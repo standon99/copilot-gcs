@@ -1,8 +1,38 @@
 # Validation record
 
-## Public documentation, license and setup verification
+## Project icon and concise README
 
-The documentation iteration adds a full fresh-clone README, the MIT license for original repository code, `CLAUDE.md` iteration/commit/documentation rules, and four direct browser screenshots. Screenshot provenance and refresh instructions are recorded in [screenshots/README.md](screenshots/README.md). The images show two real native Copter SITL sessions, a real Ollama-generated mission/parameter proposal, the mission editor, settings and diagnostics. The first copter completed reviewed upload, takeoff, AUTO transit/loiter at 30 m, then LAND and disarming. Automatic monitoring remained paused; one real planning request was used.
+The README now focuses on features and running the application, with detailed
+setup, usage and development instructions in linked guides. The original shield
+and navigation icon appears in the README, app header and browser icons. Editable
+SVG sources, PNG exports and a 1280 × 640 GitHub social-preview image are recorded
+in [brand/README.md](brand/README.md).
+
+All 74 automated tests, the production TypeScript/Vite build and Python lint
+passed. All 61 local documentation file/image links resolved. The running backend
+served the SVG favicon, PNG favicon and Apple touch icon with HTTP 200 and the
+expected image content types. The icon and social preview were visually inspected;
+the preview is under GitHub's 1 MB limit. Direct Chrome screenshots were refreshed
+using two native Copter SITL sessions on temporary port 8091, with no inference
+requests or changes to saved model, cadence or prompts. Capture conditions are in
+[screenshots/README.md](screenshots/README.md). Detailed design and feasibility
+documents were reviewed and remain applicable.
+
+All four refreshed JPEGs decoded at 1796 × 987 and were visually inspected. The
+first copter completed reviewed upload, GUIDED takeoff, AUTO waypoint transit
+and 30 m hold, then LAND and disarming; the second remained disarmed. Both owned
+simulators and the temporary server were stopped afterward. Port 8080 remained
+stopped throughout.
+
+The authenticated GitHub repository settings were inspected. Social-preview
+upload is unavailable for this private repository; GitHub only supports a first
+upload for a public repository. The ready-to-upload PNG is committed alongside
+its source, and the icon appears in the repository README. Repository visibility
+was preserved. See the linked GitHub documentation in the brand guide.
+
+## Public documentation, license and setup verification (historical, `91a1877`)
+
+The documentation iteration added a full fresh-clone README, the MIT license for original repository code, `CLAUDE.md` iteration/commit/documentation rules, and four direct browser screenshots. The images at that commit show two real native Copter SITL sessions, a real Ollama-generated mission/parameter proposal, the mission editor, settings and diagnostics. The first copter completed reviewed upload, takeoff, AUTO transit/loiter at 30 m, then LAND and disarming. Automatic monitoring remained paused; one real planning request was used. Current screenshot provenance and refresh instructions are recorded in [screenshots/README.md](screenshots/README.md).
 
 A new temporary application checkout and Python virtual environment exercised the documented setup script with the pinned requirements, including the added `requirements-sitl.txt`. Application dependencies installed, an empty-key `.env` was created with mode 0600, Copter/Plane/Rover metadata was generated, the production frontend built, and `pip check` passed. This check reused the existing pinned upstream source checkout and host Node 22; it was not a fresh operating-system or full native compiler/toolchain installation.
 

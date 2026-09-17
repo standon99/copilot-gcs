@@ -1414,6 +1414,12 @@ web = ROOT / "web/dist"
 if web.exists():
     app.mount("/assets", StaticFiles(directory=web / "assets"), name="assets")
 
+    @app.get("/icon.svg")
+    @app.get("/favicon.png")
+    @app.get("/apple-touch-icon.png")
+    def brand_icon(request: Request):
+        return FileResponse(web / request.scope["route"].path.lstrip("/"))
+
     @app.get("/")
     def index():
         return FileResponse(web / "index.html")

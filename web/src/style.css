@@ -233,12 +233,10 @@ header {
 .brand-symbol {
   width: 38px;
   height: 38px;
-  border: 1px solid #3d847e;
   border-radius: 9px;
   display: grid;
   place-items: center;
   color: var(--teal);
-  transform: rotate(-6deg);
 }
 .brand strong {
   font-size: 16px;
@@ -2218,4 +2216,10 @@ footer .divider {
 }
 .interaction-targets label {
   flex-direction: row;
+}
+
+.brand-symbol img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
