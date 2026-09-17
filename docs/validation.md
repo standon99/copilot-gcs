@@ -1,6 +1,57 @@
 # Validation record
 
-## GitHub social preview publication
+## Copilot GCS task workflow — 2026-09-17
+
+The product now leads with everyday waypoint flights and point inspections:
+Describe → Review → Upload → Operate. The start page preserves an editable
+brief through simulator launch, AI planning targets the selected vehicle by
+default, and profile-specific starters ask for missing operating details.
+Simulation diagnostics remain available as supporting tools. Product direction,
+operating guides, branding and actual screenshots were refreshed together.
+
+**85 Python tests and 7 frontend workflow tests passed**, along with Python lint,
+format checks and the production TypeScript/Vite build. The existing large-map
+bundle advisory remains. New tests cover mission progress across revisions,
+vehicle selection and reboot invalidation, plus timed-loiter readback and rejection
+of changed mission fields. All 70 local documentation file/image/heading links
+resolved, and the five screenshots decoded at 1796 × 1043 and were visually
+inspected. Setup commands were reviewed; dependencies and native toolchain
+installation were not rerun. The credential/history scan passed.
+
+Chrome and two native Copter simulators exercised the flow on temporary port
+8091. A real inspection starter response asked for coordinates, altitude and
+hold duration without editing. Explicit details then produced takeoff at 20 m,
+a waypoint at 30 m, a 30-second timed hold and return home. Selecting another
+vehicle reset the AI target selection; the unselected copter's draft stayed empty.
+Four explicit cloud requests were used across the initial and final sessions.
+Automatic monitoring remained paused, with saved cadence/model/prompts unchanged.
+
+The first upload attempt rejected a changed parameter hash. **Refresh checks**
+now lets the operator rerun numerical checks without paying for another AI
+review; it preserves upload-time home/configuration checks. The real timed-hold
+upload then exposed the pinned firmware's default direction encoding: zero is
+returned as +1. The fix accepts that specific encoding while retaining checks on
+duration, coordinates, altitude, explicit radius/direction and all other fields.
+
+After restarting with that fix, a fresh real model draft passed numerical review,
+operator upload and independent readback. Normal GUIDED/arm/mission-start actions
+flew takeoff, waypoint transit, the timed hold, return and landing. Peak relative
+altitude was **29.998 m**; the vehicle disarmed at the end, and the other vehicle
+remained disarmed. A post-flight edit showed draft r2 needing review while r1
+remained onboard. See [the recorded summary](product-workflow-validation.json).
+
+An initial model review described RTL altitude and route distance imprecisely.
+This run demonstrates the workflow and protocol behavior, not general model
+accuracy, terrain clearance, camera capture or physical-flight readiness. Plane
+and Rover starters were inspected, but their vehicle operations and fault trials
+were not rerun. Both test sessions were stopped; port 8080 stayed stopped.
+
+The GitHub About description was updated. The new social-preview PNG was uploaded
+and GitHub published an image URL, but its image CDN returned HTTP 403 and the
+preview remained blank during verification. The reviewed export is committed;
+public image rendering remains unverified. See [brand notes](brand/README.md).
+
+## GitHub social preview publication (historical, `0984521`)
 
 On 2026-09-17, after the user made the repository public, the committed
 1280 × 640 `docs/brand/social-preview.png` was uploaded through GitHub's Social
@@ -123,4 +174,4 @@ These failures motivated changes, so the final smoke batch is development eviden
 - Each local session directory retains raw/normalized telemetry, inference input/output audit, native simulator logs and private trial artifacts. These can be downloaded/replayed through the application and are intentionally absent from Git.
 - `scripts/integration.py`, `benchmark.py`, `flight-smoke.py`, `airborne-trial.py` and `log-smoke.py` reproduce the relevant workflows against owned SITL sessions. Flight scripts intentionally arm simulators and stop only their own instances.
 
-The key remains in ignored, mode-0600 `.env`; no remote is configured. Git hooks scan for private environment files and the configured credential without printing it. No credential or runtime corpus is included in the committed reports.
+At the original validation, the key remained in ignored, mode-0600 `.env` and no remote was configured. The application repository has since been published; the key remains local. Git hooks scan for private environment files and the configured credential without printing it. No credential or runtime corpus is included in the committed reports.

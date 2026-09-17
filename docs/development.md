@@ -10,11 +10,11 @@ From the repository root, with Node 22+ on PATH:
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check backend tests scripts
 .venv/bin/ruff format --check backend tests scripts
-(cd web && npm run build)
+(cd web && npm test && npm run build)
 git diff --check
 ```
 
-The current suite contains **74 automated tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+The current suite contains **85 Python tests** and **7 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
 
 For explicit live tests, start the app in another terminal first. These scripts currently target **port 8080**:
 

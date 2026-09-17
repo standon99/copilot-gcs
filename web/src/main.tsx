@@ -5,11 +5,12 @@ import { api } from "./api";
 import { SettingsPanel } from "./SettingsPanel";
 import { AttitudeIndicator } from "./AttitudeIndicator";
 import { FencePanel } from "./FencePanel";
+import { MissionWorkflow } from "./MissionWorkflow";
+import { missionProgress, taskStarters } from "./missionFlow.mjs";
 import { registerGroundStationTools } from "./webmcp";
 import * as maplibregl from "maplibre-gl";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import {
-  Plane,
   Map as MapIcon,
   SlidersHorizontal,
   FileText,
@@ -34,6 +35,8 @@ import {
   Trash2,
   RefreshCw,
   ChevronDown,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
@@ -545,7 +548,7 @@ function App() {
   const [config, setConfig] = useState<Json>(null),
     [vehicles, setVehicles] = useState<Json[]>([]),
     [vid, setVid] = useState(""),
-    [tab, setTab] = useState("flight");
+    [tab, setTab] = useState("plan");
   const [wsState, setWsState] = useState(false),
     [work, setWorkState] = useState<Json>(null),
     [error, setError] = useState(""),
@@ -558,7 +561,7 @@ function App() {
     [staged, setStaged] = useState<Json>({});
   const [chat, setChat] = useState(""),
     [editAuthorized, setEditAuthorized] = useState(false),
-    [interactionMode, setInteractionMode] = useState(false),
+    [interactionMode, setInteractionMode] = useState(true),
     [interactionTargets, setInteractionTargets] = useState<string[]>([]),
     [launchProfile, setLaunchProfile] = useState("copter"),
     [launchCount, setLaunchCount] = useState(1),
@@ -577,6 +580,7 @@ function App() {
     [takeoffAlt, setTakeoffAlt] = useState(20),
     [logEntries, setLogEntries] = useState<Json[]>([]);
   const [evidence, setEvidence] = useState<Json>(null);
+  const chatInput = useRef<HTMLTextAreaElement>(null);
   const selectedVehicleRef = useRef(vid);
   selectedVehicleRef.current = vid;
   const setWork = (data: Json) => {
@@ -630,9 +634,14 @@ function App() {
     profile = config?.profiles[current?.profile],
     chatBottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (current && work && work.draft.revision !== current.draft_revision)
+    if (current && work?.vehicle_id === current.id)
       void refresh(current.id).catch((e: Error) => setError(e.message));
-  }, [current?.id, current?.draft_revision]);
+  }, [
+    current?.id,
+    current?.draft_revision,
+    current?.active_revision,
+    current?.epoch,
+  ]);
   const guard = async (fn: () => Promise<any>, label = "") => {
     setError("");
     if (label) setBusy(label);
@@ -686,6 +695,7 @@ function App() {
   }, [vehicles]);
   useEffect(() => {
     setWork(null);
+    setInteractionTargets(vid ? [vid] : []);
     setParams(null);
     setStaged({});
     setSelected("");
@@ -809,13 +819,45 @@ function App() {
         setChatBusy(false);
       }
     }, "review");
+  const describeTask = (text?: string) => {
+    setTab("plan");
+    setReplay(null);
+    setInteractionMode(true);
+    setInteractionTargets(vid ? [vid] : []);
+    if (text !== undefined) setChat(text);
+    setTimeout(() => chatInput.current?.focus(), 0);
+  };
+  const claimControl = () =>
+    guard(async () => {
+      await api(`/vehicles/${vid}/lease`, "POST", {});
+      if (selectedVehicleRef.current === vid) setControl(true);
+    });
+  const refreshChecks = () =>
+    guard(async () => {
+      setWork(await api(`/vehicles/${vid}/review`, "POST", {}));
+      setNotice(
+        "Numerical checks refreshed for the current vehicle state. No AI request made; earlier AI comments may refer to older context.",
+      );
+    }, "review");
+  const uploadMission = () =>
+    guard(async () => {
+      const j = await api(`/vehicles/${vid}/upload`, "POST", {
+        review_id: work.review.id,
+        request_id: crypto.randomUUID(),
+      });
+      await waitJob(j.id);
+      setNotice(
+        `Mission r${draft.revision} uploaded and verified. Open Operate to arm and start.`,
+      );
+    }, "upload");
   const sendChat = () => {
-    if (!chat.trim() || chatBusy) return;
+    if (!chat.trim() || chatBusy || !current || work?.vehicle_id !== vid)
+      return;
     if (
       interactionMode &&
       !interactionTargets.some((id) => vehicles.some((v) => v.id === id))
     ) {
-      setError("Select at least one interaction target.");
+      setError("Select at least one vehicle for AI planning.");
       return;
     }
     const text = chat;
@@ -852,9 +894,9 @@ function App() {
         const v = await api("/sitl", "POST", { profile: launchProfile });
         setVid(v.id);
       }
-      setTab("flight");
+      setTab("plan");
       setNotice(
-        `${launchCount} ${launchProfile} simulator(s) started at separate positions. Each vehicle has its own tab and controls.`,
+        `${launchCount} ${launchProfile} simulator(s) started. Wait for home and telemetry, then send your task to Copilot.`,
       );
     }, "launch");
   const selectedPoint = draft?.waypoints.find((w: Json) => w.id === selected);
@@ -884,9 +926,9 @@ function App() {
           </div>
           <div>
             <strong>
-              ARDUPILOT <span>COPILOT</span>
+              COPILOT <span>GCS</span>
             </strong>
-            <small>GROUND CONTROL / RESEARCH EDITION</small>
+            <small>AI-ENABLED GROUND CONTROL</small>
           </div>
         </div>
         <div className="header-center">
@@ -895,7 +937,13 @@ function App() {
             {wsState ? "LOCAL GATEWAY ONLINE" : "GATEWAY DISCONNECTED"}
           </span>
           <span className="divider" />
-          <span className="sitl-label">SITL ENVIRONMENT</span>
+          <span className="sitl-label">
+            {current
+              ? current.owned
+                ? "SIMULATION"
+                : "TELEMETRY CONNECTION"
+              : "BUILT FOR ARDUPILOT"}
+          </span>
         </div>
         <button onClick={() => setTab("settings")} className="model-chip">
           <span className={"dot " + (config.configured ? "" : "bad")} />
@@ -906,8 +954,8 @@ function App() {
       <div className="body">
         <nav className="rail">
           {[
-            ["flight", Navigation, "Flight"],
-            ["plan", MapIcon, "Mission"],
+            ["plan", MapIcon, "Plan"],
+            ["flight", Navigation, "Operate"],
             ["parameters", SlidersHorizontal, "Parameters"],
             ["logs", FileText, "Logs"],
             ["lab", FlaskConical, "Diagnostics"],
@@ -958,10 +1006,10 @@ function App() {
             </div>
             <div className="launch">
               <button
-                onClick={() => setTab("lab")}
-                title="Open failure simulation pane"
+                onClick={() => setTab("settings")}
+                title="Open connection settings"
               >
-                <FlaskConical size={16} /> Diagnostics / tests
+                <Radio size={16} /> Connect telemetry
               </button>
               <select
                 aria-label="Vehicle to launch"
@@ -991,64 +1039,66 @@ function App() {
                 }
               >
                 <Plus size={16} />
-                {busy === "launch" ? "Starting…" : "Launch SITL"}
+                {busy === "launch" ? "Starting…" : "Start simulation"}
               </button>
             </div>
           </div>
-          <div
-            className={"interaction-bar" + (interactionMode ? " enabled" : "")}
-          >
-            <button
-              role="switch"
-              aria-checked={interactionMode}
-              aria-label="LLM interaction mode"
-              disabled={chatBusy}
-              onClick={() => {
-                const enabled = !interactionMode;
-                setInteractionMode(enabled);
-                if (enabled) setInteractionTargets(vid ? [vid] : []);
-              }}
+          {current && (
+            <div
+              className={
+                "interaction-bar" + (interactionMode ? " enabled" : "")
+              }
             >
-              <span className="switch-track">
-                <span />
-              </span>{" "}
-              LLM interaction mode{" "}
-              <strong>{interactionMode ? "ON" : "OFF"}</strong>
-            </button>
-            {interactionMode ? (
-              <>
-                <span>Allowed targets:</span>
-                <div className="interaction-targets">
-                  {vehicles.map((v) => (
-                    <label key={v.id}>
-                      <input
-                        type="checkbox"
-                        disabled={chatBusy}
-                        checked={interactionTargets.includes(v.id)}
-                        onChange={(e) =>
-                          setInteractionTargets((ids) =>
-                            e.target.checked
-                              ? [...ids, v.id]
-                              : ids.filter((id) => id !== v.id),
-                          )
-                        }
-                      />
-                      {v.profile} {v.id.slice(0, 6)}
-                    </label>
-                  ))}
-                </div>
+              <button
+                role="switch"
+                aria-checked={interactionMode}
+                aria-label="AI planning"
+                disabled={chatBusy}
+                onClick={() => {
+                  const enabled = !interactionMode;
+                  setInteractionMode(enabled);
+                  if (enabled) setInteractionTargets(vid ? [vid] : []);
+                }}
+              >
+                <span className="switch-track">
+                  <span />
+                </span>{" "}
+                AI planning <strong>{interactionMode ? "ON" : "OFF"}</strong>
+              </button>
+              {interactionMode ? (
+                <>
+                  <span>For:</span>
+                  <div className="interaction-targets">
+                    {vehicles.map((v) => (
+                      <label key={v.id}>
+                        <input
+                          type="checkbox"
+                          disabled={chatBusy}
+                          checked={interactionTargets.includes(v.id)}
+                          onChange={(e) =>
+                            setInteractionTargets((ids) =>
+                              e.target.checked
+                                ? [...ids, v.id]
+                                : ids.filter((id) => id !== v.id),
+                            )
+                          }
+                        />
+                        {v.profile} {v.id.slice(0, 6)}
+                      </label>
+                    ))}
+                  </div>
+                  <small>
+                    Copilot prepares changes. You review and apply them.
+                  </small>
+                </>
+              ) : (
                 <small>
-                  Draft edits + parameter proposals · upload and Apply stay
-                  manual
+                  Chat is in review mode. Turn on AI planning to prepare mission
+                  changes.
                 </small>
-              </>
-            ) : (
-              <small>
-                Enable to request changes for selected vehicles in the copilot
-                chat.
-              </small>
-            )}
-          </div>
+              )}
+            </div>
+          )}
           {error && (
             <div className="banner error">
               <AlertTriangle size={17} />
@@ -1131,7 +1181,7 @@ function App() {
               onSaved={async () => setConfig(await api("/bootstrap"))}
               onConnected={(v: Json) => {
                 setVid(v.id);
-                setTab("flight");
+                setTab("plan");
               }}
               onStopped={() => setVid("")}
             />
@@ -1139,47 +1189,81 @@ function App() {
           {!current && tab !== "settings" && (
             <div className="welcome">
               <div className="welcome-icon">
-                <Navigation size={38} />
+                <Sparkles size={30} />
               </div>
-              <span className="eyebrow">YOUR LOCAL FLIGHT WORKSPACE</span>
-              <h1>
-                Plan with context.
-                <br />
-                Fly with another set of eyes.
-              </h1>
+              <span className="eyebrow">COPILOT GCS</span>
+              <h1>What do you want your drone to do?</h1>
               <p>
-                Launch a simulator to build a mission, inspect live vehicle
-                data, and test an AI copilot against real ArduPilot behavior.
+                Turn a simple task into a mission with AI. Describe a flight or
+                inspection, review the plan on the map, then put it to work.
               </p>
-              <div className="welcome-cards">
-                {Object.keys(config.profiles).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => {
-                      setLaunchProfile(p);
-                      guard(async () => {
-                        const v = await api("/sitl", "POST", { profile: p });
-                        setVid(v.id);
-                      }, "launch");
-                    }}
-                    disabled={!!busy}
+              <div className="task-brief">
+                <label htmlFor="task-brief">Describe your task</label>
+                <textarea
+                  id="task-brief"
+                  ref={chatInput}
+                  value={chat}
+                  onChange={(e) => setChat(e.target.value)}
+                  placeholder="For example: help me plan a waypoint flight and return home when finished."
+                />
+                <div className="task-starters">
+                  {taskStarters(launchProfile).map((task) => (
+                    <button
+                      key={task.title}
+                      onClick={() => setChat(task.prompt)}
+                      title={task.detail}
+                    >
+                      <Sparkles size={14} />
+                      {task.title}
+                    </button>
+                  ))}
+                </div>
+                <div className="task-start-actions">
+                  <select
+                    aria-label="Task vehicle type"
+                    value={launchProfile}
+                    onChange={(e) => setLaunchProfile(e.target.value)}
                   >
-                    <Plane size={22} />
-                    <strong>{p.toUpperCase()}</strong>
-                    <span>
-                      {p === "copter"
-                        ? "Multirotor flight"
-                        : p === "plane"
-                          ? "Fixed-wing missions"
-                          : "Ground navigation"}
-                    </span>
-                    <ChevronRight size={18} />
+                    {Object.keys(config.profiles).map((p) => (
+                      <option key={p} value={p}>
+                        {p === "copter"
+                          ? "Copter"
+                          : p === "plane"
+                            ? "Plane"
+                            : "Rover"}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="primary"
+                    onClick={launch}
+                    disabled={busy === "launch"}
+                  >
+                    <Play size={16} />
+                    {busy === "launch" ? "Starting…" : "Continue in simulation"}
                   </button>
-                ))}
+                  <button onClick={() => setTab("settings")}>
+                    <Radio size={16} />
+                    Connect telemetry
+                  </button>
+                </div>
+                <small>
+                  Your brief stays here until you send it. Starting a simulation
+                  makes no AI request.
+                </small>
+              </div>
+              <div className="welcome-steps">
+                <span>1. Describe</span>
+                <ChevronRight size={14} />
+                <span>2. Review</span>
+                <ChevronRight size={14} />
+                <span>3. Upload</span>
+                <ChevronRight size={14} />
+                <span>4. Operate</span>
               </div>
               <small>
-                Mission upload and vehicle controls always remain explicit
-                operator actions.
+                Current release: control simulated vehicles; connect external
+                telemetry for monitoring.
               </small>
             </div>
           )}
@@ -1188,6 +1272,18 @@ function App() {
               <section className="content">
                 {["flight", "plan"].includes(tab) && (
                   <>
+                    <MissionWorkflow
+                      workspace={work}
+                      vehicle={current}
+                      control={control}
+                      busy={!!busy || chatBusy}
+                      onDescribe={() => describeTask()}
+                      onReview={review}
+                      onUpload={uploadMission}
+                      onOperate={() => setTab("flight")}
+                      onClaimControl={claimControl}
+                      onRefreshChecks={refreshChecks}
+                    />
                     <MapView
                       key={vid}
                       vehicle={current}
@@ -1406,7 +1502,7 @@ function App() {
                             </label>
                             <button className="primary" onClick={review}>
                               <ShieldCheck size={15} />
-                              Check plan
+                              Review plan
                             </button>
                           </div>
                         </div>
@@ -1897,7 +1993,7 @@ function App() {
                                   {p.name.startsWith("SIM_") && (
                                     <small className="muted">
                                       {" "}
-                                      laboratory only
+                                      diagnostics only
                                     </small>
                                   )}
                                 </td>
@@ -2119,14 +2215,13 @@ function App() {
                 )}
                 {tab === "lab" && (
                   <div className="page lab">
-                    <span className="eyebrow">
-                      FAILURE DETECTION LABORATORY
-                    </span>
-                    <h1>Test the copilot. Keep the truth hidden.</h1>
+                    <span className="eyebrow">SIMULATION DIAGNOSTICS</span>
+                    <h1>Practice handling the unexpected.</h1>
                     <p>
-                      Inject a fault into this owned simulator. The monitor
-                      receives an allowlisted telemetry window; scenario names,
-                      simulator parameters and injection events are excluded.
+                      Try a failure scenario in this simulated vehicle and see
+                      how Copilot explains the telemetry. The injected fault is
+                      hidden from the AI so its observations can be compared
+                      with what happened.
                     </p>
                     <div className="lab-config">
                       <label>
@@ -2288,15 +2383,17 @@ function App() {
               <aside className="copilot">
                 <div className="copilot-heading">
                   <div className="copilot-icon">
-                    <ShieldCheck size={21} />
+                    <Sparkles size={21} />
                   </div>
                   <div>
-                    <h2>Safety copilot</h2>
+                    <h2>Copilot</h2>
                     <span>
                       {current.profile.toUpperCase()} · {vid.slice(0, 6)}
                     </span>
                   </div>
-                  <span className="read-only">ADVISORY</span>
+                  <span className="read-only">
+                    {interactionMode ? "AI PLANNING" : "REVIEW"}
+                  </span>
                 </div>
                 <div className="copilot-status">
                   <span
@@ -2309,9 +2406,9 @@ function App() {
                   />
                   <span>
                     {!config.monitor_enabled
-                      ? "Paused globally in Settings"
+                      ? "Live insights paused · chat is available"
                       : !current.monitor_enabled
-                        ? "Paused for this vehicle"
+                        ? "Live insights paused for this vehicle"
                         : current.monitor_status}
                   </span>
                   <button
@@ -2356,7 +2453,7 @@ function App() {
                         <span>{r.text}</span>
                       </div>
                     ))}
-                  {current.assessment ? (
+                  {current.assessment && (
                     <div
                       className={
                         "assessment " +
@@ -2399,16 +2496,34 @@ function App() {
                         s · {current.assessment.track} · advisory
                       </small>
                     </div>
-                  ) : (
+                  )}
+                  {!work?.chat.length && !current.assessment && (
                     <div className="copilot-intro">
-                      <ShieldCheck size={26} />
-                      <h3>Context before action.</h3>
+                      <MessageSquare size={24} />
+                      <h3>Let's plan your next task.</h3>
                       <p>
-                        I can review your route, revise a local draft, and
-                        assess changing telemetry. Start with a mission on the
-                        map or tell me what you want to do.
+                        Describe a waypoint flight or inspection. I'll help
+                        prepare the mission, explain the steps and revise it
+                        with you.
                       </p>
-                      <span>Waiting for the first live model assessment.</span>
+                      <div className="task-starters vertical">
+                        {taskStarters(current.profile).map((task) => (
+                          <button
+                            key={task.title}
+                            disabled={chatBusy}
+                            onClick={() => describeTask(task.prompt)}
+                          >
+                            <Sparkles size={15} />
+                            <span>
+                              <strong>{task.title}</strong>
+                              <small>{task.detail}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      <span>
+                        Choose an idea to edit its request, then send it.
+                      </span>
                     </div>
                   )}
                   {work?.chat.map((m: Json, i: number) => (
@@ -2541,26 +2656,14 @@ function App() {
                       <button
                         className="primary wide"
                         disabled={
-                          !work.review?.upload_allowed ||
+                          !missionProgress(work, current).reviewed ||
+                          !current.owned ||
                           !control ||
-                          current.armed
+                          current.armed ||
+                          !!busy ||
+                          chatBusy
                         }
-                        onClick={() =>
-                          guard(async () => {
-                            const j = await api(
-                              `/vehicles/${vid}/upload`,
-                              "POST",
-                              {
-                                review_id: work.review.id,
-                                request_id: crypto.randomUUID(),
-                              },
-                            );
-                            await waitJob(j.id);
-                            setNotice(
-                              `Mission r${draft.revision} uploaded and readback verified. Vehicle remains disarmed.`,
-                            );
-                          }, "upload")
-                        }
+                        onClick={uploadMission}
                       >
                         <Upload size={15} />
                         {busy === "upload"
@@ -2569,7 +2672,7 @@ function App() {
                       </button>
                       {!work.review && (
                         <button className="wide" onClick={review}>
-                          Run versioned review
+                          Review plan
                         </button>
                       )}
                       {!control && (
@@ -2709,7 +2812,7 @@ function App() {
                   )}
                   {interactionMode && (
                     <div className="interaction-context">
-                      Editing targets:{" "}
+                      Planning for:{" "}
                       {vehicles
                         .filter((v) => interactionTargets.includes(v.id))
                         .map((v) => `${v.profile} ${v.id.slice(0, 6)}`)
@@ -2718,9 +2821,11 @@ function App() {
                   )}
                   <div className="compose-box">
                     <textarea
+                      ref={chatInput}
+                      aria-label="Message Copilot"
                       placeholder={
                         interactionMode
-                          ? "Tell me which vehicle, waypoint or parameter to change…"
+                          ? "Describe a task, change this plan, or ask about your vehicle…"
                           : editAuthorized
                             ? "Describe a route or request a draft change…"
                             : "Ask about telemetry or review this mission…"
@@ -2736,7 +2841,9 @@ function App() {
                     />
                     <button
                       aria-label="Send to copilot"
-                      disabled={chatBusy || !chat.trim()}
+                      disabled={
+                        chatBusy || !chat.trim() || work?.vehicle_id !== vid
+                      }
                       onClick={sendChat}
                     >
                       <Send size={18} />
@@ -2745,10 +2852,10 @@ function App() {
                   <div className="chat-footer">
                     <span>
                       {interactionMode
-                        ? "Draft edits + staged parameters"
+                        ? "Mission drafts + parameter proposals"
                         : "Local draft tools only"}
                     </span>
-                    <span>No vehicle control by AI</span>
+                    <span>You approve vehicle actions</span>
                   </div>
                 </div>
               </aside>

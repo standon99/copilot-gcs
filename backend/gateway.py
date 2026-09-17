@@ -292,8 +292,15 @@ class Gateway:
                 # Non-location commands may normalize unused coordinates.
                 if k in ("lat", "lon", "alt") and want["command"] in (20, 178):
                     continue
+                expected = want[k]
+                # Pinned AP_Mission stores LOITER_TIME direction, not radius,
+                # and returns +1 for the default (zero) clockwise value.
+                # Accept only that default encoding; explicit radii, duration,
+                # location, altitude and direction still require matching readback.
+                if want["command"] == 19 and k == "p3" and expected == 0:
+                    expected = 1
                 if not math.isclose(
-                    want[k], got[k], rel_tol=0, abs_tol=2e-7 if k in ("lat", "lon") else 0.01
+                    expected, got[k], rel_tol=0, abs_tol=2e-7 if k in ("lat", "lon") else 0.01
                 ):
                     raise RuntimeError(f"Mission item {i}: {k} readback mismatch")
         return {"status": "verified", "items": received}

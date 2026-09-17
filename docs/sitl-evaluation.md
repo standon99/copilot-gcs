@@ -174,7 +174,7 @@ Correct symptom detection and correct root-cause diagnosis are separate scores. 
 
 | Metric | Definition/initial target |
 | --- | --- |
-| Fault detection | Episode recall by vehicle/family/severity, precision, misses, and confidence intervals. Tentative research gate: at least 90% recall on the preregistered observable core scenarios, reported per family/type. |
+| Fault detection | Episode recall by vehicle/family/severity, precision, misses, and confidence intervals. Tentative evaluation gate: at least 90% recall on the preregistered observable core scenarios, reported per family/type. |
 | False alarms | New unjustified actionable incidents per nominal operating hour. Tentative target: no more than 0.5/hour per vehicle; report uncertainty and lower-severity noise separately. |
 | LLM timeliness | p50/p95 arrival latency from observable symptom; fraction before native warning/reaction; fraction before a predeclared useful-action deadline. Target p95 within 15 s for sustained observable core faults. |
 | Inference availability | Fraction of scheduled cutoffs assessed successfully before expiry; include skipped, rate-limited, malformed, and late requests. Target at least 99% for the declared concurrent-vehicle load. |
@@ -184,7 +184,7 @@ Correct symptom detection and correct root-cause diagnosis are separate scores. 
 | Recovery | Time to stop repeating a cleared incident and rate of premature or false resolution. |
 | Cost/load | Tokens, calls, latency, provider failures, queue/coalescing counts, and storage per vehicle-hour. |
 
-All numerical targets are provisional research acceptance criteria, not achieved results or safety guarantees. Ratify scenario-specific useful deadlines before the locked test. Fast catastrophic cases can miss a 15-second target and still demonstrate why the LLM is unsuitable for that intervention. No amount of explanation quality compensates for a missed urgent warning.
+All numerical targets are provisional evaluation acceptance criteria, not achieved results or safety guarantees. Ratify scenario-specific useful deadlines before the locked test. Fast catastrophic cases can miss a 15-second target and still demonstrate why the LLM is unsuitable for that intervention. No amount of explanation quality compensates for a missed urgent warning.
 
 Report both all successfully injected episodes and a preregistered observable subset; include unobservable or ambiguous cases with their counts/reasons so excluding them cannot inflate performance unnoticed. Failed setup/injection is a separate invalid-run category. Inference failures, stale assessments, and rate limits on otherwise valid runs remain in the denominator as missed/unavailable assessments. Report operator chat, continuous monitoring, and retrospective analysis separately.
 

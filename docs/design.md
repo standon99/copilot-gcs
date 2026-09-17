@@ -1,8 +1,8 @@
-# Design: ArduPilot web ground station and LLM safety copilot
+# Technical design: Copilot GCS
 
-Design baseline v0.3 · 2026-09-17 · The local research implementation is now available. See [implementation.md](implementation.md) for shipped behavior and remaining differences, and [validation.md](validation.md) for measured evidence. Targets below remain design targets unless verified there.
+Design baseline v0.3 · 2026-09-17 · The product is an AI-enabled ground control station; see [product.md](product.md) for its task-first direction. See [implementation.md](implementation.md) for shipped behavior and remaining differences, and [validation.md](validation.md) for measured evidence. Targets below remain design targets unless verified there.
 
-Build a browser application that provides the normal ground-station workflow and a persistent LLM copilot. The operator can describe a mission in chat or construct it on the map; both use one editable draft that the LLM can inspect and revise through conversation before upload. During operation, the backend continuously records and checks vehicle data, supplies bounded observations to an inference API, and presents evidence-linked assessments. An isolated SITL laboratory measures detection on faults whose identities are hidden from the monitor.
+Build a browser application that provides the normal ground-station workflow and a persistent LLM copilot. The operator can describe a mission in chat or construct it on the map; both use one editable draft that the LLM can inspect and revise through conversation before upload. During operation, the backend continuously records and checks vehicle data, supplies bounded observations to an inference API, and presents evidence-linked assessments. An isolated Simulation diagnostics measures detection on faults whose identities are hidden from the monitor.
 
 **Multiple vehicle types are required in the first release.** The initial profile set in this draft is multicopter Copter, conventional fixed-wing Plane, and ground Rover. Shared transport and UI infrastructure must not erase their differences in commands, flight/driving phases, units, failsafes, and safe recovery options.
 
@@ -10,7 +10,7 @@ See [feasibility.md](feasibility.md) for feasibility, alternatives, effort, and 
 
 ## 1. Scope and product behavior
 
-The first release is a local SITL research application. Open one webpage to connect vehicles, inspect/change parameters, plan and execute supported missions, inspect logs, view satellite imagery, ask the LLM questions, and run laboratory trials. The same backend interfaces should later support real MAVLink transports, but physical-vehicle readiness is a separate validation gate.
+Copilot GCS helps operators turn everyday tasks into reviewed missions through an integrated AI planning workflow. The current release supports simulator control and external telemetry monitoring. Open one webpage to connect vehicles, inspect/change parameters, plan and execute supported missions, inspect logs, view satellite imagery, ask the LLM questions, and rehearse failure scenarios. The same backend interfaces should later support real MAVLink transports, but physical-vehicle readiness is a separate validation gate.
 
 Support several connected sessions from the beginning, including a simultaneous Copter/Plane/Rover test. The selected vehicle is prominently shown beside every control and chat input. Background monitoring runs per vehicle even when its tab is not selected. Cross-vehicle chat is a separately labeled, read-only summary mode with explicit vehicle references.
 
@@ -22,7 +22,7 @@ Support several connected sessions from the beginning, including a simultaneous 
 | Mission intent | Optional plain-language brief; reviewable interpretation of objectives/constraints; comparison with staged/readback plans and live behavior; clause-linked deviations and unknowns |
 | Logs | Live status messages, application events, command history, telemetry plots, recording, onboard log download when allowed, and synchronized replay |
 | Copilot | Conversational plan creation/review/revision, change previews and upload card in the chat panel; automatic incident feed; evidence links; assessment age; uncertainty; monitor availability |
-| SITL laboratory | Vehicle/model and scenario selection, start/stop, repeat with seeds, blind evaluation mode, and results revealed after predictions are locked |
+| Simulation diagnostics | Vehicle/model and scenario selection, start/stop, repeat with seeds, blind evaluation mode, and results revealed after predictions are locked |
 | Connection/settings | Transport, detected firmware/profile, telemetry coverage, API endpoint/model/secret reference, imagery configuration, retention limits |
 
 Use a persistent right-hand copilot panel, central map/instruments, a bottom timeline/log drawer, and separate parameter/mission workspaces. Alerts remain visible when chat or a large parameter table is open. A selected log/replay is conspicuously labeled historical and never becomes the live command target.
@@ -157,7 +157,7 @@ For missions, implement the request/item/ack state machine with `MISSION_ITEM_IN
 
 ### GCS presence
 
-The gateway owns the configured GCS heartbeat identity; the LLM worker never emits heartbeats or RC overrides. In this local research design the backend represents GCS presence, so closing a browser does not itself simulate loss of the vehicle link. The UI write lease expires on disconnect, while monitoring continues. Document this behavior and test browser loss, backend loss, and radio/link loss separately. A future physical deployment must select and validate an operator-presence policy explicitly.
+The gateway owns the configured GCS heartbeat identity; the LLM worker never emits heartbeats or RC overrides. In this local application design the backend represents GCS presence, so closing a browser does not itself simulate loss of the vehicle link. The UI write lease expires on disconnect, while monitoring continues. Document this behavior and test browser loss, backend loss, and radio/link loss separately. A future physical deployment must select and validate an operator-presence policy explicitly.
 
 GCS-loss scenarios must suppress every heartbeat from the configured controlling GCS, including any router/MAVProxy sender that could mask the loss. Expected behavior is derived from the active vehicle's failsafe configuration. Copter, for example, uses GCS heartbeat age with its configured timeout/action. [Copter GCS failsafe](https://ardupilot.org/copter/docs/gcs-failsafe.html)
 
@@ -335,7 +335,7 @@ These are proposed application endpoints, not existing ArduPilot APIs:
 | `POST /api/v1/intent-drafts/{id}/activate` | Operator reviews and activates an immutable revision; does not change the vehicle mission or parameters |
 | `GET /api/v1/vehicles/{id}/logs` | List recordings/onboard logs; separate download job status |
 | `POST /api/v1/chat` | Human chat scoped to named live sessions or a historical recording |
-| `POST /lab/v1/runs` | Separate laboratory service; absent from the monitor credential's route set |
+| `POST /lab/v1/runs` | Separate simulation diagnostics service; absent from the monitor credential's route set |
 | `GET /lab/v1/runs/{id}/report` | Results access after the prediction record is closed |
 
 Every vehicle-write request includes session identity, boot epoch, control-lease token, expiry, and idempotency key. Local draft edits use workspace authorization, selected vehicle/profile, base revision, and idempotency, and may be made while disconnected; offline review must label unavailable live checks. Return a job ID and its lifecycle for vehicle operations rather than claiming success when bytes are sent. WebSocket reconnects supply a resume sequence or receive a fresh snapshot; lost event history is explicit.
@@ -388,7 +388,7 @@ ardupilot/                 existing upstream source/build checkout
 1. **Profile/connectivity spike.** Build/run Plane and Rover alongside the existing Copter setup. Verify identity, streams, units, metadata, parameter read/write/readback while disarmed, a supported mission round trip, and basic log capture for each. Pin firmware, dialect, simulator model, and metadata hashes. Sample the actual Ollama endpoint/model's latency and format behavior.
 2. **Complete the ordinary GCS path.** Deliver vehicle selection, instruments, map, parameter workflow, supported commands/missions, plots, recording/replay, and independent alert rules. Prove it remains responsive with the inference worker stopped.
 3. **Add continuous assessments, mission intent, and chat.** Implement the broker and versioned contracts, a bounded intent grammar, both conversational/map planning entry paths, synchronized draft editing, plan/behavior comparison, and upload cards. Add evidence-linked incident cards, bounded tools, concurrency/fairness, request logging, and degraded UI states.
-4. **Implement the laboratory and blind protocol.** Validate fault effects first, then evaluate matched nominal/fault runs, baseline detectors, leakage probes, held-out seeds, and intent/operator-error scenarios. Score brief interpretation separately from downstream deviation detection. Report results separately per vehicle and scenario.
+4. **Implement simulation diagnostics and the blind protocol.** Validate fault effects first, then evaluate matched nominal/fault runs, baseline detectors, leakage probes, held-out seeds, and intent/operator-error scenarios. Score brief interpretation separately from downstream deviation detection. Report results separately per vehicle and scenario.
 5. **Review expansion.** Add missing GCS parity features and additional vehicle profiles using the same contracts. A physical-vehicle pilot requires bench/HIL checks, transport/heartbeat review, and domain review; SITL results alone do not establish real-world reliability.
 
 Meaningful tests include lost/delayed/duplicate acknowledgements; read-only/clamped/reboot-required parameter cases; partial parameter downloads; reboot and reconnect; mission interruption; incorrect units/sentinels; map and provider failure; prompt injection; ground-truth access attempts; future-data access during replay; and a simultaneous three-vehicle run with overlapping system IDs on separate links. For planning, test manual edits racing model patches, undo, unsupported mission items, malformed patches, stale reviews, exact upload snapshots, and draft edits during active execution. Verify that commands, drafts, parameter writes, alerts, and chat never cross session boundaries, and neither model context can issue vehicle writes.

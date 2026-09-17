@@ -2,21 +2,45 @@
 
 [Project overview](../README.md)
 
+## From a task to a mission
+
+The start page lets you write a task before connecting. **Quick flight**, **Point
+inspection** and **Waypoint route** fill an editable brief for Copter; Plane and
+Rover have vehicle-appropriate starters. Choosing a starter makes no model call.
+An inspection prompt asks for coordinates, altitude above home and hold duration;
+it does not assume a camera or obstacle clearance.
+
+Choose a profile and **Continue in simulation**, or **Connect telemetry** to open
+connection settings. The brief stays in the composer. Wait for telemetry/home,
+then send it to **Copilot**. The AI can ask questions or create a local draft.
+Refine it through conversation or edit the map and waypoint table directly.
+
+The mission strip shows **Describe → Review → Upload → Operate**. Review the
+current revision, claim control and upload explicitly. Open **Operate** for
+arming and flight controls. A later edit returns the workflow to review while
+the older uploaded mission stays onboard. Use **Diagnostics** for simulation
+failure scenarios when needed. Physical-vehicle control is not enabled.
+
+If upload reports that home or configuration changed after review, inspect that
+change and use **Refresh checks** in the mission strip to rerun numerical checks
+without another AI request. Earlier AI comments retain their original context.
+**Review plan** requests a fresh AI assessment as well as numerical checks.
+
 ## Using the app
 
 ### Waypoints, altitude and deployment
 
-1. Select the intended vehicle tab. In **Mission**, click the map to add points or drag an existing point.
+1. Select the intended vehicle tab. In **Plan**, click the map to add points or drag an existing point.
 2. Edit each row's **Altitude m** and **Reference**. **Relative home** means metres above the vehicle's home; **AMSL** means metres above mean sea level. Press Enter or leave the field to save. Terrain-relative missions are blocked because terrain coverage is not implemented.
 3. Use supported commands: waypoint (16), unlimited/timed loiter (17/19), return home (20), ground-speed change (178), and takeoff/land (22/21) for aerial vehicles. Rover has no aerial takeoff/land commands.
 4. Optionally import a checked example from [`examples/`](../examples/). Its coordinates are at the Canberra SITL site; adapt them for another location.
-5. **Check plan** attaches numerical checks and requests a real model review. Resolve blockers and inspect warnings/unknowns.
+5. **Review plan** attaches numerical checks and requests a real model review. Resolve blockers and inspect warnings/unknowns.
 6. **Claim control**, then **Upload reviewed revision** in the copilot panel. Upload is disarmed-only and verifies an onboard readback. A later draft edit does not change the active mission.
 7. Arm and start separately. Copter supports GUIDED takeoff; Plane requires an appropriate takeoff mission; Rover executes ground navigation. Native autopilot prearm checks remain enabled.
 
 ### LLM interaction and parameter changes
 
-Turn on **LLM interaction mode** in the main bar, check allowed targets, and write in the copilot chat. Use a displayed vehicle ID when instructions differ between copters. For example, replacing the sample ID with a current one:
+Use **AI planning** in the main bar, check the target vehicles, and write in the Copilot chat. Use a displayed vehicle ID when instructions differ between copters. For example, replacing the sample ID with a current one:
 
 > For copter ab12cd, add a waypoint at -35.3623, 149.16523 at 30 m above home, followed by unlimited loiter. Stage LOG_DISARMED=1 for that copter. Leave the other copter unchanged.
 
@@ -24,7 +48,7 @@ Requested waypoint changes revise local drafts, with before/after inspection and
 
 Parameter requests create cards containing vehicle, exact parameter, old/new values and reason. **Claim control → Apply to [ID]** writes to a disarmed owned simulator and verifies readback. Proposals expire after five minutes and are invalid after reboot or conflicting changes. A failed batch stops; earlier verified writes remain applied and are recorded in its results.
 
-The interaction switch starts off on each page load. With it off, chat is review-only unless **Allow requested draft edits** is enabled. Editing prompts never grants upload, arm, mode, takeoff, mission-start or failure-injection authority to the model.
+AI planning starts on each page load and targets the selected vehicle. Switching vehicle tabs resets that selection to the new vehicle; check additional targets explicitly for a multi-vehicle request. With it off, chat is review-only unless **Allow requested draft edits** is enabled. Editing prompts never grants upload, arm, mode, takeoff, mission-start or failure-injection authority to the model.
 
 ### Mission intent and operator-error checks
 
@@ -36,7 +60,7 @@ Open **Mission intent & operating constraints** and describe what the operation 
 
 ### Geofence
 
-In **Mission → Onboard geofence**, claim control while disarmed, choose **Enable onboard fence**, enter radius and optional maximum altitude above home, select the breach action, then **Apply onboard fence**. The configured circle appears as an amber dashed boundary; use zoom/fit controls if it is outside the viewport.
+In **Plan → Onboard geofence**, claim control while disarmed, choose **Enable onboard fence**, enter radius and optional maximum altitude above home, select the breach action, then **Apply onboard fence**. The configured circle appears as an amber dashed boundary; use zoom/fit controls if it is outside the viewport.
 
 The editor configures a home-centred circle plus optional ceiling, sets the ceiling datum explicitly, and reads settings back. It replaces fence-type selection and disables automatic enable-on-flight behavior. It does not upload polygon fences. Mission-intent exclusion polygons are separate advisory constraints. [ArduPilot geofence reference](https://ardupilot.org/copter/docs/common-geofencing-landing-page.html).
 
@@ -50,7 +74,7 @@ During supported navigation modes, a gold stick/target ring uses fresh autopilot
 
 ### Parameters, logs and external connections
 
-**Parameters** supports search, metadata, staged single/bulk changes and import/export. **Logs** exposes recorded telemetry, historical replay and onboard DataFlash transfer. Simulator fault parameters use the separate laboratory rather than ordinary parameter writes.
+**Parameters** supports search, metadata, staged single/bulk changes and import/export. **Logs** exposes recorded telemetry, historical replay and onboard DataFlash transfer. Simulator fault parameters use Diagnostics rather than ordinary parameter writes.
 
 **Settings → Read-only MAVLink connection** connects to a supported local transport, such as `tcp:127.0.0.1:5760`. External connections remain read-only in this release. The optional older terminal launchers are `start-sitl.sh` and `start-mavproxy.sh`; the latter additionally requires `MAVProxy==1.8.74` in `.venv`. They are not part of the web app's normal startup path.
 
@@ -73,7 +97,7 @@ The cloud credential is sent only to the original configured HTTPS provider orig
 
 ## SITL failure experiments
 
-Open **Diagnostics / tests**, select an owned simulator, claim control, choose a scenario, observation duration, seed and evidence track, then run. Enable automatic assessments first and choose an interval shorter than the observation window. The lab warns about an interval that is too long and does not silently increase request frequency.
+Open **Diagnostics**, select an owned simulator, claim control, choose a scenario, observation duration, seed and evidence track, then run. Enable automatic assessments first and choose an interval shorter than the observation window. The lab warns about an interval that is too long and does not silently increase request frequency.
 
 | Scenarios | Vehicle profiles |
 | --- | --- |

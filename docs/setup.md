@@ -126,7 +126,7 @@ Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. FastAPI serves the prod
 
 1. Open **Settings** before launching a vehicle. Set the model/endpoint, choose an assessment interval, and enable or pause automatic assessments. Save.
 2. **Load models** checks model discovery; **Test connection (1 request)** makes an explicit inference request. Both use the values currently in the form. Save to activate them for normal requests.
-3. Select **copter → 1× → Launch SITL**. Wait for heartbeat, GPS, home and parameter discovery; startup checks may take tens of seconds.
+3. Select **copter → 1× → Start simulation**. Wait for heartbeat, GPS, home and parameter discovery; startup checks may take tens of seconds.
 4. Confirm the teal vehicle marker, live telemetry and flight instrument appear. No arming is needed for this check.
 5. Optionally repeat with Plane/Rover or use **2×** to launch two copters.
 

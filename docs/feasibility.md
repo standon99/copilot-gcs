@@ -1,12 +1,14 @@
-# Feasibility: ArduPilot web ground station with an LLM safety copilot
+# Engineering feasibility: Copilot GCS
 
 Draft for review · 2026-09-17 · Initial scope: Copter, conventional Plane, and Rover
 
-**Implementation update:** the local application, all three simulator builds, real Ollama integration, and initial blinded trials are now implemented. This analysis preserves the pre-implementation assessment below; its workspace inventory and unmeasured items describe that earlier point in time. Consult [implementation.md](implementation.md) and [validation.md](validation.md) for the current capabilities and measured results. The original engineering estimates include substantial hardening and validation beyond this research implementation.
+**Product direction:** [Copilot GCS](product.md) is an AI-enabled ground control station for simple waypoint flights and inspections. This document retains the earlier engineering assessment, not the product positioning.
+
+**Implementation update:** the local application, all three simulator builds, real Ollama integration, and initial blinded trials are now implemented. This analysis preserves the pre-implementation assessment below; its workspace inventory and unmeasured items describe that earlier point in time. Consult [implementation.md](implementation.md) and [validation.md](validation.md) for the current capabilities and measured results. The original engineering estimates include substantial hardening and validation beyond this initial implementation.
 
 **Recommendation: proceed with a staged prototype.** A browser ground station with parameters, satellite imagery, telemetry, logs, mission controls, and an LLM panel is technically feasible. Before upload, the LLM can help create, inspect, and edit a shared local mission draft through conversation. During execution, combine continuous deterministic monitoring with advisory LLM assessments, then measure whether the LLM adds useful detection or explanation on blinded SITL trials.
 
-The unresolved research question is the LLM's reliability, not whether it can be connected to ArduPilot. Do not promise detection of every fault, guaranteed response times from an inference API, or reliable identification of a physical cause from ambiguous telemetry.
+The unresolved validation question is the LLM's reliability, not whether it can be connected to ArduPilot. Do not promise detection of every fault, guaranteed response times from an inference API, or reliable identification of a physical cause from ambiguous telemetry.
 
 The user requires multiple vehicle types from the start. This draft uses Copter, conventional fixed-wing Plane, and ground Rover as the initial profiles; all three are release requirements. Sub, boats, helicopters, and QuadPlane need additional profiles. The proposed implementation is specified in [design.md](design.md). The experiment protocol is in [sitl-evaluation.md](sitl-evaluation.md).
 
@@ -44,7 +46,7 @@ For the map, MapLibre provides a browser renderer for satellite raster layers; i
 
 | Option | Benefit | Cost or limitation | Decision |
 | --- | --- | --- | --- |
-| Focused custom web GCS | Direct fit for monitoring, evidence display, and blind experiments | More GCS protocol/UI implementation | Recommended for the research MVP |
+| Focused custom web GCS | Direct fit for monitoring, evidence display, and blind experiments | More GCS protocol/UI implementation | Recommended for the initial implementation |
 | Extend Blue Robotics Cockpit | Existing browser GCS, widgets, telemetry, and mission UI | Copter coverage and integration with the command and observation boundaries need a spike | Reconsider before expanding to broad GCS parity |
 | Existing desktop GCS plus a web copilot | Fastest way to test LLM value alongside mature controls | Does not satisfy the eventual single-webpage workflow | Useful development reference and comparison tool |
 
@@ -71,7 +73,7 @@ These are planning estimates for one experienced full-stack engineer familiar wi
 | Continuous monitoring and chat | 3–5 weeks | Profile-specific rules, observation builder, validated LLM responses, evidence links, degraded behavior |
 | Mission intent, conversational planning, and operator-error checks | 2–4 weeks | Reuse the mission editor for chat draft edits/reviews; reviewed constraints, plan/live comparisons, ambiguity handling, and dedicated evaluation |
 | Blinded benchmark and hardening | 5–8 weeks | Three scenario suites, isolation tests, negative controls, held-out trials, comparative metrics, reconnect/failure tests |
-| **Research MVP total with mission intent** | **16–26 engineer-weeks** | A useful multi-type SITL research system with measured limitations |
+| **Initial implementation total with mission intent** | **16–26 engineer-weeks** | A useful multi-vehicle application with measured limitations |
 
 This provisional estimate assumes conversational planning reuses the same versioned editor, validators, and supported waypoint/mission operations as the map UI. A spike must validate that assumption; unrestricted mission generation or route optimization would require re-estimation. Broad GCS feature parity, calibrated mission-energy prediction, payload-specific verification, cross-vehicle coordination, and physical-aircraft readiness are additional work. Reassess build versus extension after the connectivity spike rather than treating the MVP estimate as the cost of replacing every Mission Planner feature.
 

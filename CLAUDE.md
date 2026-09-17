@@ -3,6 +3,19 @@
 These instructions apply to work in this repository. Read the README and the
 relevant design, implementation and validation documents before making changes.
 
+## Product direction
+
+- The product is **Copilot GCS**, an AI-enabled ground control station that makes
+  everyday drone tasks easy. Lead with waypoint flights, point inspections and
+  conversational planning. AI is part of the main workflow.
+- Use **Describe → Review → Upload → Operate** as the primary flow. Simulation
+  and diagnostics support that flow; do not brand the product as a research
+  edition or a fault-detection experiment.
+- Keep the distinction between current simulator control/external telemetry and
+  future validated physical-vehicle operation explicit. Product copy must not
+  imply that camera capture, survey coverage or autonomous connection setup is
+  implemented when it is not.
+
 ## Every iteration must be committed
 
 - Finish each completed iteration with a descriptive Git commit. Include all
@@ -64,7 +77,7 @@ relevant design, implementation and validation documents before making changes.
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check backend tests scripts
 .venv/bin/ruff format --check backend tests scripts
-(cd web && npm run build)
+(cd web && npm test && npm run build)
 git diff --check
 .venv/bin/python scripts/check-secrets.py --staged
 ```

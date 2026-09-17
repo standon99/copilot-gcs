@@ -90,6 +90,66 @@ def test_command_rejection_is_not_success():
         g.send_command(400, [1])
 
 
+def timed_hold_roundtrip(changes=None, requested=None):
+    g = gateway()
+    point = {
+        "command": 19,
+        "frame": 3,
+        "lat": -35.3628,
+        "lon": 149.16553,
+        "alt": 30,
+        "p1": 30,
+        "p2": 0,
+        "p3": 0,
+        "p4": 0,
+        **(requested or {}),
+    }
+    returned = {**point, "p3": 1, **(changes or {})}
+    messages = [
+        SimpleNamespace(seq=0, get_type=lambda: "MISSION_REQUEST_INT"),
+        SimpleNamespace(seq=1, get_type=lambda: "MISSION_REQUEST_INT"),
+        SimpleNamespace(type=0, get_type=lambda: "MISSION_ACK"),
+    ]
+    g.wait.side_effect = messages
+    g.download_mission = Mock(return_value=[{}, returned])
+    return g, point
+
+
+def test_timed_hold_default_direction_verifies_pinned_ardupilot_readback():
+    g, point = timed_hold_roundtrip()
+    result = g.upload([point], {"lat": -35.363261, "lon": 149.16523, "alt": 584.09})
+    assert result["status"] == "verified"
+    assert result["items"][1]["p1"] == 30
+    assert result["items"][1]["p3"] == 1
+    assert g.link.mav.mission_item_int_send.call_args.args[9] == 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"p1": 10},
+        {"lat": -35.3638},
+        {"lon": 149.16653},
+        {"alt": 20},
+        {"p3": -1},
+        {"p3": 2},
+        {"frame": 0},
+        {"command": 17},
+    ],
+)
+def test_timed_hold_readback_still_rejects_changed_mission_fields(changes):
+    g, point = timed_hold_roundtrip(changes)
+    with pytest.raises(RuntimeError, match="mismatch"):
+        g.upload([point], {"lat": -35.363261, "lon": 149.16523, "alt": 584.09})
+
+
+@pytest.mark.parametrize("requested", [{"command": 17}, {"p3": 25}])
+def test_direction_normalization_is_limited_to_default_timed_hold(requested):
+    g, point = timed_hold_roundtrip(requested=requested)
+    with pytest.raises(RuntimeError, match="p3 readback mismatch"):
+        g.upload([point], {"lat": -35.363261, "lon": 149.16523, "alt": 584.09})
+
+
 def test_log_download_repairs_missing_chunk_and_publishes_atomically(tmp_path):
     g = gateway()
     g.folder = tmp_path

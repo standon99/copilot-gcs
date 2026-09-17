@@ -1,20 +1,19 @@
 <p align="center"><img src="web/public/icon.svg" width="88" height="88" alt="Copilot GCS icon" /></p>
 
-# ArduPilot Safety Copilot
+# Copilot GCS
 
-A web ground station for **Copter, Plane and Rover**, with an LLM copilot for planning missions, reviewing telemetry and testing failures in SITL.
+**An AI-enabled ground control station for everyday drone tasks.** Describe a waypoint flight or inspection, refine the mission with Copilot, review it on the map, then upload and operate it. Built for ArduPilot **Copter, Plane and Rover**.
 
-![Actual Copter SITL flight workspace](docs/screenshots/flight.jpg)
+![Copilot GCS mission planning with a real simulated vehicle](docs/screenshots/mission-planning.jpg)
 
 ## Features
 
-- **Multiple vehicles:** up to six sessions, including multiple copters, on a satellite map.
-- **Mission planning:** place waypoints, set altitude, configure a geofence, review and upload plans.
-- **LLM interaction:** select a vehicle, describe changes, and let the copilot edit drafts or propose parameter updates.
-- **Live monitoring:** mission-intent checks, configurable AI assessments, flight instruments and navigation cues.
-- **Parameters and logs:** search/edit parameters, download logs and replay telemetry.
-- **Failure testing:** simulate GPS, battery, RC, wind, sensor and motor faults without revealing the scenario to the monitor.
-- **Flexible inference:** Ollama cloud or a local compatible endpoint; saved model, frequency and prompt settings.
+- **AI planning:** describe waypoint flights or point inspections; refine drafts and propose parameter changes through conversation.
+- **Guided workflow:** describe → review → upload → operate, with explicit vehicle actions.
+- **Flight workspace:** satellite map, waypoint altitudes, geofences, live instruments, parameters, logs and replay.
+- **Multiple vehicles:** select Copilot's targets and run up to six simulations together.
+- **Your model and usage:** Ollama cloud or a local endpoint; saved model, prompts and assessment frequency.
+- **Live insights and diagnostics:** check telemetry against mission intent and rehearse failure scenarios in simulation.
 
 Vehicle writes currently support **app-owned SITL only**. Uploads, parameter application and flight commands require explicit operator actions.
 
@@ -60,12 +59,12 @@ Keep the key out of Git. For local Ollama, use `http://localhost:11434/v1` and a
 Open **http://127.0.0.1:8080**. For another port: `COPILOT_PORT=8091 ./start.sh`. Stop with **Ctrl+C**.
 
 1. **Settings:** choose the model, assessment interval and automatic-monitoring state; save.
-2. **Launch SITL:** choose a vehicle and count. Wait for GPS and telemetry.
-3. **Mission:** add waypoints and set altitude/reference, or enable **LLM interaction mode** and describe the plan.
-4. **Claim control**, review, then upload. Arm and start separately. Use **Diagnostics / tests** for failure simulations.
+2. Describe a task on the start page, choose a vehicle and **Continue in simulation**. Wait for home and telemetry.
+3. Send the brief to **Copilot**, or add waypoints in **Plan**. Refine and review the draft.
+4. **Claim control**, upload, then open **Operate** to arm and start separately. **Diagnostics** contains failure simulations.
 
 ## More
 
-[Usage guide](docs/usage.md) · [Screenshots](docs/screenshots/README.md) · [Development](docs/development.md) · [Validation](docs/validation.md) · [Design](docs/design.md)
+[Usage guide](docs/usage.md) · [Screenshots](docs/screenshots/README.md) · [Development](docs/development.md) · [Validation](docs/validation.md) · [Product](docs/product.md)
 
 [MIT licensed](LICENSE). ArduPilot and other dependencies retain their own licenses. [Contribution rules](CLAUDE.md).

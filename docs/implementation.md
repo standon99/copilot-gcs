@@ -1,6 +1,6 @@
 # Implementation and operating boundaries
 
-The repository now contains a local research ground station, native Copter/Plane/Rover SITL integration, and live Ollama inference. The original [design](design.md) remains the broader design baseline. This document describes the actual implementation rather than treating every proposed acceptance target as achieved.
+Copilot GCS is an AI-enabled web ground control station for simple waypoint flights and inspections, with Copter/Plane/Rover support and live Ollama inference. The original [design](design.md) remains the broader design baseline. This document describes the actual implementation rather than treating every proposed acceptance target as achieved.
 
 The project icon is shared by the app header, browser favicon and README. Vector
 and PNG assets plus a GitHub social-preview image are described in [brand assets](brand/README.md).
@@ -11,6 +11,29 @@ Start `./start.sh`, then open `http://127.0.0.1:8080`. The production React bund
 
 The API binds to loopback. Native SITL's TCP/RC listeners use ArduPilot's normal network binding behavior; this is a local development machine setup, not a hardened network appliance. External loopback MAVLink connections are inspectable but vehicle writes are restricted to simulators launched by this app.
 
+## Task-first experience
+
+The start page accepts an editable task brief before a vehicle is connected.
+Profile-specific task starters fill the brief without sending it. Starting a
+simulation preserves that text and opens **Plan**; sending it to Copilot is a
+separate action. The Copter starters cover a short home-position flight, a point
+inspection and a waypoint route. Plane and Rover prompts respect their vehicle
+capabilities and ask for missing locations and operating details. An inspection
+starter prepares positioning only; it does not provide camera or payload control.
+
+**AI planning** starts on and targets the selected vehicle. Switching vehicle
+tabs resets the target set to that vehicle; operators can explicitly add other
+vehicles. The **Describe → Review → Upload → Operate** strip tracks the current
+draft and its review/upload revision. An edited draft is never shown as already
+uploaded because an older mission is onboard. Upload and flight controls keep
+the existing backend checks and explicit operator actions. **Diagnostics** is a
+supporting simulation tool rather than the default entry point.
+
+**Refresh checks** reruns only the numerical review, so a changed home or
+configuration can be reviewed without another inference request. **Review plan**
+also requests an AI assessment. Both preserve the upload-time context guards;
+refreshing numerical checks does not refresh earlier model comments.
+
 ## Implemented workflows
 
 | Area | Actual behavior |
@@ -19,15 +42,20 @@ The API binds to loopback. Native SITL's TCP/RC listeners use ArduPilot's normal
 | Parameters | Full discovery with missing-index repair on refresh; search; pinned-firmware descriptions/ranges/enums/bitmasks; staged JSON import/export; disarmed writes with fresh old-value conflict detection, type checks, echo and separate readback; sequential bulk journal |
 | Missions | Map clicks and dragging; waypoint table; relative-home/AMSL frames; supported commands per profile; JSON import/export; onboard download; immutable draft revisions, optimistic concurrency, undo; deterministic route/constraint checks; explicit reviewed upload and readback; separate arming/start |
 | Conversational planning | Real cloud model inference; canonical draft and operational observations in context; typed add/update/remove/reorder patches only; review-only mode rejects patches; before/after cards; stale-revision rejection; no vehicle-write tools |
-| Multi-vehicle interaction | Main-page opt-in switch and explicit target allowlist; all responses validated before any draft mutation; profile/revision/session guards; model parameter proposals expire after five minutes and require manual disarmed Apply; old-value conflicts, independent readback and partial-write journal |
+| Multi-vehicle interaction | AI planning enabled by default, with a main-page toggle and explicit vehicle targets; all responses validated before any draft mutation; profile/revision/session guards; model parameter proposals expire after five minutes and require manual disarmed Apply; old-value conflicts, independent readback and partial-write journal |
 | Intent | Optional brief; model-proposed interpretation that requires explicit acceptance into the draft; altitude bounds with a datum, maximum ground speed, route corridor, exclusion polygons, required mission-command order, and unresolved clauses; active intent pinned to the uploaded version |
 | Monitoring | Independent rules plus evidence-citing model assessments, availability/error states, operational and telemetry-only tracks, one in-flight assessment per vehicle, separately reserved monitor/planner concurrency, finite provider deadlines |
 | Settings | Persistent installation preferences for model, OpenAI-compatible endpoint, assessment interval/global pause, timeout and all four prompts; model discovery and explicit connection test; available without a vehicle; optimistic settings revisions |
 | Onboard fence | Disarmed circle/ceiling parameter editor with explicit above-home ceiling datum, profile-specific breach actions, conflict checks, sequential readback and enable-last behavior; configured boundary displayed on map |
 | Logs | Raw MAVLink tlog, normalized JSONL, SQLite audit, exact successful model-visible observation/prediction records, onboard LOG_* listing/download with gap retries, historical map/altitude replay with a causal cursor and no write route |
-| SITL lab | Nominal, GPS loss/jump, battery sag, RC loss, wind, barometer drift, magnetometer failure; Copter reduced motor output; Plane held airspeed; baseline/jitter/observation/restoration lifecycle; seed/repeat CLI; locked prediction hash followed by result disclosure |
+| Simulation diagnostics | Nominal, GPS loss/jump, battery sag, RC loss, wind, barometer drift, magnetometer failure; Copter reduced motor output; Plane held airspeed; baseline/jitter/observation/restoration lifecycle; seed/repeat CLI; locked prediction hash followed by result disclosure |
 
 Supported mission commands are waypoint (16), unlimited/timed loiter (17/19), return home (20), ground-speed change (178), plus takeoff/land (22/21) for aerial profiles. Command-specific parameters remain visible in the editor. Relative-terrain missions are blocked because terrain coverage is not implemented. Frame/coordinate comparisons apply to navigational fields; ArduPilot normalization of unused return-home/speed fields is handled explicitly. Legacy MISSION_REQUEST receives MISSION_ITEM_INT, as specified by the [MAVLink mission protocol](https://mavlink.io/en/services/mission.html).
+
+Timed loiter's default direction is verified against the pinned firmware's
+canonical readback (`p3=0` becomes `+1`). Duration, position, altitude, explicit
+radius/direction and all other fields remain checked; this is not a general
+normalization bypass. See the pinned [ArduPilot mission conversion](https://github.com/ArduPilot/ardupilot/blob/dbe792162d06cab66c3475fd5556bf7a120f119e/libraries/AP_Mission/AP_Mission.cpp#L1664).
 
 ## Interaction and display contracts
 
@@ -67,7 +95,7 @@ DataFlash downloads refresh the onboard log's advertised size, stream bounded wi
 
 ## Limits that remain explicit
 
-- This is an implemented SITL research tool, not full Mission Planner parity or validation for physical flight. Firmware flashing, calibration wizards, joystick/continuous setpoints, arbitrary mission commands, MAVFTP, onboard polygon-fence uploads, terrain/obstacle/airspace validation, and additional airframes are outside this release.
+- The current release supports simulator control and external telemetry monitoring. Physical flight has not been validated, and full Mission Planner parity is not implemented. Firmware flashing, calibration wizards, joystick/continuous setpoints, arbitrary mission commands, MAVFTP, onboard polygon-fence uploads, terrain/obstacle/airspace validation, and additional airframes are outside this release.
 - Fixed-wing turn/climb/landing performance and energy/endurance are reported as unverified. Groundspeed bounds are supported; airspeed bounds, terrain clearance, payload completion and arbitrary natural-language requirements are retained as unresolved where the numerical schema cannot express them.
 - Satellite tiles require network access and follow provider attribution/usage terms. The mission overlay is independent of tile availability. Exclusion polygons are editable as coordinate JSON; a dedicated polygon-drawing gesture is not implemented.
 - Normalized recordings and raw tlogs each stop at 256 MiB per session with visible recording state. Audit/inference/benchmark artifacts have no automatic deletion policy. The operator manages disk retention under `runtime/copilot/`.

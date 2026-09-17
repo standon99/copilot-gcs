@@ -1,0 +1,103 @@
+{
+  "date": "2026-09-17",
+  "base_revision": "0984521",
+  "environment": "macOS Apple Silicon; native app-owned Copter SITL; temporary port 8091",
+  "firmware_commit": "dbe792162d06cab66c3475fd5556bf7a120f119e",
+  "model": "gpt-oss:120b",
+  "provider": "Ollama cloud",
+  "explicit_inference_requests": 4,
+  "automatic_monitoring_enabled": false,
+  "flow": [
+    "inspection starter asked for coordinates, altitude and hold duration without editing",
+    "explicit operator inputs produced a local draft",
+    "numerical/AI review exercised in the initial session",
+    "numerical-only refresh and reviewed upload exercised in the final session",
+    "operator GUIDED mode, arm and mission start",
+    "AUTO takeoff, inspection point, timed hold and return/landing",
+    "new local draft returns to review and leaves the onboard revision intact"
+  ],
+  "mission": [
+    {
+      "id": "14494a0818",
+      "command": 22,
+      "lat": -35.363261,
+      "lon": 149.1652299,
+      "alt": 20.0,
+      "frame": 3,
+      "p1": 0.0,
+      "p2": 0.0,
+      "p3": 0.0,
+      "p4": 0.0
+    },
+    {
+      "id": "e768605994",
+      "command": 16,
+      "lat": -35.3628,
+      "lon": 149.16553,
+      "alt": 30.0,
+      "frame": 3,
+      "p1": 0.0,
+      "p2": 0.0,
+      "p3": 0.0,
+      "p4": 0.0
+    },
+    {
+      "id": "2231559473",
+      "command": 19,
+      "lat": -35.3628,
+      "lon": 149.16553,
+      "alt": 30.0,
+      "frame": 3,
+      "p1": 30.0,
+      "p2": 0.0,
+      "p3": 0.0,
+      "p4": 0.0
+    },
+    {
+      "id": "e67cbd87b5",
+      "command": 20,
+      "lat": 0.0,
+      "lon": 0.0,
+      "alt": 0.0,
+      "frame": 0,
+      "p1": 0.0,
+      "p2": 0.0,
+      "p3": 0.0,
+      "p4": 0.0
+    }
+  ],
+  "upload_status": "verified",
+  "timed_hold_readback": {
+    "seq": 3,
+    "command": 19,
+    "frame": 3,
+    "lat": -35.3628,
+    "lon": 149.16553,
+    "alt": 30.0,
+    "p1": 30.0,
+    "p2": 0.0,
+    "p3": 1.0,
+    "p4": 0.0
+  },
+  "mission_start_status": "verified",
+  "peak_relative_altitude_m": 29.998,
+  "inspection_position_samples": 35,
+  "inspection_position_observed_span_s": 34,
+  "landing_observed_after_start_s": 112,
+  "landed_disarmed": true,
+  "other_vehicle_armed": false,
+  "post_flight_edit": {
+    "draft_revision": 2,
+    "active_revision": 1,
+    "upload_disabled_until_review": true
+  },
+  "settings_unchanged": true,
+  "screenshots": "screenshots/README.md",
+  "limits": [
+    "No physical vehicle or payload operation",
+    "No failure injection or detection-accuracy campaign in this iteration",
+    "Plane/Rover task starters checked; their flight operations were not rerun",
+    "One initial AI review described RTL altitude and route distance imprecisely; text remains advisory",
+    "Simulator readback, state and human review remain authoritative"
+  ]
+}

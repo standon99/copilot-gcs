@@ -2223,3 +2223,185 @@ footer .divider {
   width: 100%;
   height: 100%;
 }
+
+/* Task-first planning: a brief, an inspectable draft, then explicit operations. */
+.welcome {
+  justify-content: flex-start;
+  padding: 42px 28px 28px;
+}
+.welcome-icon {
+  margin-bottom: 18px;
+  padding: 13px;
+}
+.welcome h1 {
+  max-width: 720px;
+  font-size: clamp(30px, 3vw, 44px);
+  margin: 12px 0;
+}
+.welcome > p {
+  max-width: 640px;
+  margin: 0 0 24px;
+  line-height: 1.7;
+}
+.task-brief {
+  width: min(760px, 100%);
+  padding: 22px;
+  text-align: left;
+  background: #192c35;
+  border: 1px solid #39585f;
+  border-radius: 14px;
+  box-shadow: 0 14px 60px #07101645;
+}
+.task-brief > label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b6e3d9;
+  margin-bottom: 10px;
+}
+.task-brief textarea {
+  width: 100%;
+  min-height: 106px;
+  resize: vertical;
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.65;
+  background: #111f28;
+  border-color: #35535d;
+}
+.task-brief > small {
+  display: block;
+  color: #96afbd;
+  font-size: 11px;
+  margin-top: 14px;
+  line-height: 1.6;
+}
+.task-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+.task-starters button {
+  font-size: 12px;
+  color: #bce6dd;
+  background: #203b40;
+  border-color: #39585c;
+}
+.task-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.task-start-actions select {
+  min-width: 104px;
+}
+.welcome-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 13px;
+  color: #8facbd;
+  font-size: 12px;
+  margin-top: 25px;
+}
+.welcome > small {
+  margin-top: 18px;
+  font-size: 11px;
+  color: #9bb1bd;
+}
+.mission-workflow {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  background: #14252d;
+  border-bottom: 1px solid #345059;
+}
+.workflow-steps {
+  display: flex;
+  gap: 9px;
+}
+.workflow-steps button {
+  flex: 1;
+  padding: 9px 10px;
+  justify-content: center;
+  color: #a0b7c0;
+  background: #192d36;
+  border-color: #334b56;
+}
+.workflow-steps button.current {
+  background: #25473f;
+  color: #b6f1e1;
+  border-color: #569988;
+}
+.workflow-steps button.complete {
+  color: #8bd5bc;
+}
+.workflow-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding-top: 10px;
+  color: #a5bcc7;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.workflow-next button {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #b0ead8;
+}
+.workflow-next small {
+  margin-left: auto;
+  color: #d6bd8f;
+}
+.task-starters.vertical {
+  flex-direction: column;
+}
+.task-starters.vertical button {
+  justify-content: flex-start;
+  text-align: left;
+  padding: 12px;
+  gap: 10px;
+}
+.task-starters.vertical strong,
+.task-starters.vertical small {
+  display: block;
+}
+.task-starters.vertical small {
+  color: #a3bdc5;
+  font-size: 11px;
+  margin-top: 4px;
+  font-weight: 400;
+}
+.copilot-intro > span {
+  display: block;
+  line-height: 1.6;
+  color: #9fb9c4;
+}
+@media (min-width: 1450px) {
+  .copilot {
+    width: 420px;
+  }
+}
+@media (max-width: 900px) {
+  .mission-workflow {
+    padding: 10px;
+  }
+  .workflow-steps {
+    gap: 5px;
+  }
+  .workflow-steps button {
+    font-size: 10px;
+    padding: 8px 5px;
+    gap: 5px;
+  }
+  .workflow-next {
+    font-size: 10px;
+  }
+  .task-brief {
+    padding: 16px;
+  }
+}

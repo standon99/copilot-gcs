@@ -369,7 +369,7 @@ async def lifespan(app):
     await asyncio.gather(worker, *list(tasks), return_exceptions=True)
 
 
-app = FastAPI(title="ArduPilot Safety Copilot", lifespan=lifespan)
+app = FastAPI(title="Copilot GCS", lifespan=lifespan)
 
 
 def origin_valid(origin, host):
@@ -880,7 +880,7 @@ async def parameter_write(vid: str, body: ParameterEdit, request: Request):
     if v.fence_busy and body.name.startswith("FENCE_"):
         raise HTTPException(409, "A fence update is in progress")
     if body.name.startswith("SIM_"):
-        raise HTTPException(403, "Use the separate SITL laboratory for simulator parameters")
+        raise HTTPException(403, "Use Diagnostics for simulator parameters")
     if body.name not in v.params:
         raise HTTPException(404, "Parameter not discovered")
     try:

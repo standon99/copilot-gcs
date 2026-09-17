@@ -2,29 +2,35 @@
 
 Captured 2026-09-17 from the production React frontend in Chrome at
 `http://127.0.0.1:8091`, backed by the real FastAPI server and two native Copter
-SITL instances. Refreshed with the project icon in the branding/concise-README
-iteration based on `91a1877`. Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
+SITL instances. These show the Copilot GCS product iteration based on `0984521`.
+Firmware: `dbe792162d06cab66c3475fd5556bf7a120f119e`.
 
 | File | Recorded state |
 | --- | --- |
-| `flight.jpg` | First copter holding at 30 m above home in AUTO after takeoff and waypoint transit; second copter disarmed; live target ring and flight instrument |
-| `mission-planning.jpg` | Operator-created local takeoff/waypoint/unlimited-loiter draft, editable altitudes/datums, vehicle target selection and numerical draft checks |
-| `settings.jpg` | Actual saved cloud endpoint/model, global pause, 300-second assessment interval and system-prompt selector |
-| `diagnostics.jpg` | Actual scenario/seed/track controls during GUIDED climb; trial not running; pause/interval warnings visible |
+| `start.jpg` | Task-first onboarding with the editable point-inspection starter, before connecting |
+| `mission-planning.jpg` | Real AI-generated takeoff/waypoint/30-second-hold/RTL mission, after verified upload; selected target and 20/30 m altitudes visible |
+| `flight.jpg` | That mission returning from the inspection point in AUTO at 30 m, with live navigation cues, attitude instrument and the actual model response |
+| `settings.jpg` | Preserved cloud endpoint/model, global pause, 300-second interval and prompt selector during the mission's landing phase |
+| `diagnostics.jpg` | Actual scenario/seed/track controls during return/landing; no fault injected; pause and interval notices visible |
 
-The local draft was created through the application's API, then reviewed and
-uploaded with readback verification. Normal mode/arm/takeoff/start controls
-flew the first simulator. Automatic monitoring stayed paused; this refresh used
-no inference requests and shows no model-generated responses or proposals. No
-failure was injected. The test copter was landed and the temporary server and
-simulators stopped after capture. The earlier model-generated demonstration
-remains documented in the historical validation record and Git history.
+The start-page brief survived launching two copters. The initial real model
+response asked for missing inspection details. After a protocol fix and backend
+restart, a fresh model request produced the mission shown here. Four explicit
+inference requests were used across the two sessions; monitoring stayed paused.
+No model output, vehicle state or UI was fabricated. See the
+[workflow validation](../product-workflow-validation.json) for the flown sequence.
 
-The JPEG files are direct browser screenshots, not generated mockups or edited
-telemetry. They include no API key or private environment file. Satellite-map
-attribution is retained. Session IDs and coordinates are from the local Canberra
-SITL demonstration. Images illustrate UI behavior, not physical-flight readiness
-or detection accuracy.
+Numerical review, explicit upload and independent readback preceded normal
+mode/arm/mission-start controls. The first copter flew to the inspection point,
+held for 30 seconds and returned to land and disarm. The second stayed disarmed.
+The temporary server and all owned simulators were stopped afterward; saved
+settings were unchanged and port 8080 stayed off.
+
+The JPEGs are direct browser captures at 1796 × 1043, not edited telemetry or
+generated mockups. They contain no API key. Map attribution is retained. Demo
+coordinates are from Canberra SITL and illustrate navigation, not obstacle
+clearance or physical-flight readiness. Inspections here mean positioning;
+camera and payload control are not implemented.
 
 ## Refresh procedure
 
@@ -47,6 +53,10 @@ or detection accuracy.
 
 ## Gallery
 
+### Start a task
+
+![Describe a task](start.jpg)
+
 ### Flight
 
 ![Flight view](flight.jpg)
@@ -61,4 +71,4 @@ or detection accuracy.
 
 ### Diagnostics
 
-![Failure laboratory](diagnostics.jpg)
+![Simulation diagnostics](diagnostics.jpg)

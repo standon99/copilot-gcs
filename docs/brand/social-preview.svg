@@ -8,11 +8,11 @@
     <circle cx="91" cy="35" r="6" fill="#F3BC6D" stroke="#101B24" stroke-width="3"/>
   </g>
   <g font-family="Arial, Helvetica, sans-serif">
-    <text x="406" y="192" fill="#85DFCE" font-size="18" font-weight="700" letter-spacing="4">ARDUPILOT SAFETY COPILOT</text>
+    <text x="406" y="192" fill="#85DFCE" font-size="18" font-weight="700" letter-spacing="4">AI-ENABLED GROUND CONTROL</text>
     <text x="400" y="286" fill="#EEF8F4" font-size="76" font-weight="700" letter-spacing="-2">Copilot GCS</text>
-    <text x="406" y="344" fill="#A9BDC5" font-size="28">Plan. Fly. Understand.</text>
-    <text x="406" y="407" fill="#D3E1E6" font-size="22">Web ground control with an LLM copilot</text>
-    <text x="406" y="451" fill="#85DFCE" font-size="20">Copter · Plane · Rover · SITL</text>
+    <text x="406" y="344" fill="#A9BDC5" font-size="28">Describe. Plan. Operate.</text>
+    <text x="406" y="407" fill="#D3E1E6" font-size="22">Simple flights. Waypoint routes. Inspections.</text>
+    <text x="406" y="451" fill="#85DFCE" font-size="20">Built for ArduPilot · Copter · Plane · Rover</text>
     <text x="96" y="555" fill="#7E9BA8" font-size="18">github.com/standon99/copilot-gcs</text>
   </g>
 </svg>
