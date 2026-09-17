@@ -1,0 +1,67 @@
+{
+  "revision": 0,
+  "waypoints": [
+    {
+      "id": "route-1",
+      "command": 16,
+      "lat": -35.362661,
+      "lon": 149.16523,
+      "alt": 0.0,
+      "frame": 3,
+      "p1": 0,
+      "p2": 0,
+      "p3": 0,
+      "p4": 0
+    },
+    {
+      "id": "route-2",
+      "command": 16,
+      "lat": -35.362661,
+      "lon": 149.16583,
+      "alt": 0.0,
+      "frame": 3,
+      "p1": 0,
+      "p2": 0,
+      "p3": 0,
+      "p4": 0
+    },
+    {
+      "id": "route-3",
+      "command": 16,
+      "lat": -35.363261,
+      "lon": 149.16583,
+      "alt": 0.0,
+      "frame": 3,
+      "p1": 0,
+      "p2": 0,
+      "p3": 0,
+      "p4": 0
+    },
+    {
+      "id": "return",
+      "command": 20,
+      "lat": 0.0,
+      "lon": 0.0,
+      "alt": 0.0,
+      "frame": 3,
+      "p1": 0,
+      "p2": 0,
+      "p3": 0,
+      "p4": 0
+    }
+  ],
+  "intent": {
+    "brief": "SITL demonstration at the Canberra launch site. Follow the rectangular route and return home.",
+    "min_alt": null,
+    "max_alt": null,
+    "altitude_frame": "relative_home",
+    "max_speed": 3.0,
+    "corridor_m": null,
+    "required_commands": [
+      16,
+      20
+    ],
+    "unresolved": [],
+    "exclusions": []
+  }
+}

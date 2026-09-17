@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "profile": "copter",
+      "vehicle": "fd2a7732d2bd",
+      "armed_observed": true,
+      "peak_relative_alt_m": 14.928,
+      "modes_observed": [
+        "GUIDED",
+        "LAND",
+        "STABILIZE"
+      ],
+      "motion_verified": true
+    },
+    {
+      "profile": "plane",
+      "vehicle": "c63910e1011a",
+      "armed_observed": true,
+      "peak_relative_alt_m": 14.174,
+      "modes_observed": [
+        "AUTO",
+        "FBWA",
+        "INITIALISING",
+        "MANUAL"
+      ],
+      "motion_verified": true
+    },
+    {
+      "profile": "rover",
+      "id": "c93a706cb93c",
+      "verified_motion": true,
+      "peak_relative_alt_m": 0,
+      "peak_groundspeed_m_s": 1.420719861984253,
+      "mode": "AUTO"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+# Implementation and operating boundaries
+
+The repository now contains a local research ground station, native Copter/Plane/Rover SITL integration, and live Ollama inference. The original [design](design.md) remains the broader design baseline. This document describes the actual implementation rather than treating every proposed acceptance target as achieved.
+
+## Run
+
+Start `./start.sh`, then open `http://127.0.0.1:8080`. The production React bundle is served by the same FastAPI origin. Launch simulators from the vehicle bar. Each simulator has its own directory, MAVLink connection, TCP port, RC-input UDP port, gateway process, observation history, mission draft, and command queue. The system deliberately supports overlapping MAVLink system IDs on **separate** connections.
+
+The API binds to loopback. Native SITL's TCP/RC listeners use ArduPilot's normal network binding behavior; this is a local development machine setup, not a hardened network appliance. External loopback MAVLink connections are inspectable but vehicle writes are restricted to simulators launched by this app.
+
+## Implemented workflows
+
+| Area | Actual behavior |
+|---|---|
+| Live operations | Concurrent vehicle selection, mode/armed state, relative altitude, ground/air speed, battery, GPS, attitude data, freshness coverage, status messages, satellite/street map, selected vehicle position and mission overlays |
+| Parameters | Full discovery with missing-index repair on refresh; search; pinned-firmware descriptions/ranges/enums/bitmasks; staged JSON import/export; disarmed writes with fresh old-value conflict detection, type checks, echo and separate readback; sequential bulk journal |
+| Missions | Map clicks and dragging; waypoint table; relative-home/AMSL frames; supported commands per profile; JSON import/export; onboard download; immutable draft revisions, optimistic concurrency, undo; deterministic route/constraint checks; explicit reviewed upload and readback; separate arming/start |
+| Conversational planning | Real cloud model inference; canonical draft and operational observations in context; typed add/update/remove/reorder patches only; review-only mode rejects patches; before/after cards; stale-revision rejection; no vehicle-write tools |
+| Intent | Optional brief; model-proposed interpretation that requires explicit acceptance into the draft; altitude bounds with a datum, maximum ground speed, route corridor, exclusion polygons, required mission-command order, and unresolved clauses; active intent pinned to the uploaded version |
+| Monitoring | Independent rules plus evidence-citing model assessments, availability/error states, operational and telemetry-only tracks, one in-flight assessment per vehicle, separately reserved monitor/planner concurrency, finite provider deadlines |
+| Logs | Raw MAVLink tlog, normalized JSONL, SQLite audit, exact successful model-visible observation/prediction records, onboard LOG_* listing/download with gap retries, historical map/altitude replay with a causal cursor and no write route |
+| SITL lab | Nominal, GPS loss/jump, battery sag, RC loss, wind, barometer drift, magnetometer failure; Copter reduced motor output; Plane held airspeed; baseline/jitter/observation/restoration lifecycle; seed/repeat CLI; locked prediction hash followed by result disclosure |
+
+Supported mission commands are waypoint (16), unlimited/timed loiter (17/19), return home (20), ground-speed change (178), plus takeoff/land (22/21) for aerial profiles. Command-specific parameters remain visible in the editor. Relative-terrain missions are blocked because terrain coverage is not implemented. Frame/coordinate comparisons apply to navigational fields; ArduPilot normalization of unused return-home/speed fields is handled explicitly. Legacy MISSION_REQUEST receives MISSION_ITEM_INT, as specified by the [MAVLink mission protocol](https://mavlink.io/en/services/mission.html).
+
+## Operational semantics
+
+The browser holds a renewable 30-second write lease. Closing it stops lease renewal; the gateway continues GCS heartbeats and monitoring. The configured GCS source system is 255. A queued request expires after 30 seconds and is tied to a boot epoch. The gateway rechecks freshness, disarmed-only conditions and relevant control preconditions before execution. No reconnect automatically replays a command.
+
+A command's `accepted` result means the autopilot acknowledged it. `verified` means the specific protocol/state check passed: mode/armed heartbeat, parameter readback, or mission download comparison. Takeoff acknowledgement does not by itself prove the requested altitude was reached. Timeout errors state that completion may be unknown; inspect telemetry and audit before issuing another action.
+
+Draft edits do not alter the onboard mission. Mission upload remains disarmed-only. The executing mission and intent remain pinned while the operator creates later drafts. Relative altitude intent is anchored to the reviewed home; a moved home is reported. Cruise minimum-altitude checks exclude landing/return contexts and report missing flight-phase evidence.
+
+The default monitor cadence is **20 seconds after each completed assessment**, not the original aspirational five-second target. Requests time out after 45 seconds by default. The UI exposes observation age and assessment availability; it does not promise continuous model attention. Numerical rules continue during inference outages. No latency or detection-accuracy target is certified by this implementation.
+
+## Inference and secret boundaries
+
+The key is loaded only on the backend from ignored `.env`, which has mode `0600`. It is not sent to the browser, placed in prompts, recorded in audit payloads, or committed. No Git remote is configured and no push is needed to run the app.
+
+Inference uses one-shot Python subprocesses and anonymous pipes. On this Mac, `sandbox-exec` denies reads of `.env`, `.git`, the entire runtime tree and the ArduPilot checkout, denies filesystem writes, and denies outbound loopback network connections. The worker receives only a fixed prompt/payload plus the credentials needed to contact the configured provider. It has no dynamic tools, shell evaluator, vehicle client, injector, or application session cookie. Cloud responses are parsed as JSON and validated in the parent; monitor citations must refer to supplied evidence IDs. On other platforms the UI explicitly reports that this filesystem sandbox is unavailable.
+
+The blind telemetry track excludes simulator messages, **all** parameters, STATUSTEXT, estimator/health diagnostic flags, deterministic rule labels, scenario names, seeds, injection events and ground truth. It also strips the mission brief, unresolved free-text clauses and custom waypoint identifiers to avoid accidentally passing operator-written scenario hints. Structured approved mission constraints remain. The operational track adds normal autopilot status messages, mission text and rule findings and is scored separately. Model prompts are generic across nominal and fault runs. Static knowledge of ArduPilot failure behavior is allowed; telling the model which scenario is running is not.
+
+Model-facing observations use explicit SI field names, with native records retained as evidence. GPS DOP values and EKF innovation ratios are dimensionless. The pinned Plane firmware's airspeed-error scaling quirk is corrected from its source implementation. A schema/evidence error gets at most one repair attempt within the original total deadline; rejected outputs and successful repairs are retained in the inference audit. Repair prompts contain only the same observations and the schema error, never injector information.
+
+Trial prediction files are created once, made read-only and hashed before scenario results are disclosed. This is local reproducibility protection, not tamper-proof remote attestation. The operator owns the machine and can inspect the private artifacts.
+
+The symptom scorer requires a matching incident with a citation timestamp at or after injection and at or before that assessment's observation cutoff. Runs with no valid assessment are unassessed. The CLI now waits 65 seconds between trials to drain the 60-second observation window; this does not reset all vehicle state or establish independent experimental repetitions.
+
+DataFlash downloads refresh the onboard log's advertised size, stream bounded windows, retry missing byte ranges, and publish a file only after every advertised byte arrives. A SHA-256 digest accompanies the result. This verifies the advertised-size snapshot; an active onboard log can append bytes afterward.
+
+## Limits that remain explicit
+
+- This is an implemented SITL research tool, not full Mission Planner parity or validation for physical flight. Firmware flashing, calibration wizards, joystick/continuous setpoints, arbitrary mission commands, MAVFTP, onboard fence editing, terrain/obstacle/airspace validation, and additional airframes are outside this release.
+- Fixed-wing turn/climb/landing performance and energy/endurance are reported as unverified. Groundspeed bounds are supported; airspeed bounds, terrain clearance, payload completion and arbitrary natural-language requirements are retained as unresolved where the numerical schema cannot express them.
+- Satellite tiles require network access and follow provider attribution/usage terms. The mission overlay is independent of tile availability. Exclusion polygons are editable as coordinate JSON; a dedicated polygon-drawing gesture is not implemented.
+- Normalized recordings and raw tlogs each stop at 256 MiB per session with visible recording state. Audit/inference/benchmark artifacts have no automatic deletion policy. The operator manages disk retention under `runtime/copilot/`.
+- The current UI displays the latest assessment and preserves previous results in logs. It does not yet provide a complete incident acknowledgement/escalation workflow or automatic cross-vehicle conflict analysis.
+- Stored draft revisions remain in SQLite/audit, while live session identities are intentionally recreated on restart. Export mission JSON before terminating a session to conveniently reuse it in a new one.
+- Trial scoring is **lexical symptom screening**, separately labeled. A keyword match is not adjudicated diagnosis or a calibrated confidence. Disarmed GPS/battery trials test observation plumbing; motor/wind/motion scenarios need appropriate airborne/driving phases. No held-out accuracy percentage is claimed.
+- This release has automated protocol, planning, isolation and API tests plus real SITL/provider tests. A full packet-loss/HIL campaign, all fault adapters in all flight phases, sustained endurance tests and manual browser acceptance remain separate validation work.
+- Optional WebMCP tools expose telemetry reads and reversible local draft staging only. No browser/WebMCP runtime was available in this session, so their browser registration and visual UI behavior remain unverified.
+
+See [validation.md](validation.md) for the concrete evidence from this installation.

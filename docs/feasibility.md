@@ -2,6 +2,8 @@
 
 Draft for review · 2026-09-17 · Initial scope: Copter, conventional Plane, and Rover
 
+**Implementation update:** the local application, all three simulator builds, real Ollama integration, and initial blinded trials are now implemented. This analysis preserves the pre-implementation assessment below; its workspace inventory and unmeasured items describe that earlier point in time. Consult [implementation.md](implementation.md) and [validation.md](validation.md) for the current capabilities and measured results. The original engineering estimates include substantial hardening and validation beyond this research implementation.
+
 **Recommendation: proceed with a staged prototype.** A browser ground station with parameters, satellite imagery, telemetry, logs, mission controls, and an LLM panel is technically feasible. Before upload, the LLM can help create, inspect, and edit a shared local mission draft through conversation. During execution, combine continuous deterministic monitoring with advisory LLM assessments, then measure whether the LLM adds useful detection or explanation on blinded SITL trials.
 
 The unresolved research question is the LLM's reliability, not whether it can be connected to ArduPilot. Do not promise detection of every fault, guaranteed response times from an inference API, or reliable identification of a physical cause from ambiguous telemetry.

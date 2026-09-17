@@ -1,0 +1,10 @@
+{
+  "vehicle": "7b711993c8dd",
+  "tested_at": 1789626049.266965,
+  "bytes": 405066,
+  "sha256": "60c93528c1d5182fa827f3dd3ba1fbd27618cc85e25aa9ada2cea8cadf9abdb8",
+  "coverage": "Exact advertised-size snapshot; later onboard appends are not included",
+  "native_prefix_equal": true,
+  "http_download_equal": true,
+  "client_size_ignored": true
+}

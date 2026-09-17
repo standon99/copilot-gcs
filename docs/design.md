@@ -1,6 +1,6 @@
 # Design: ArduPilot web ground station and LLM safety copilot
 
-Draft v0.3 · 2026-09-17 · Status: proposed, not implemented
+Design baseline v0.3 · 2026-09-17 · The local research implementation is now available. See [implementation.md](implementation.md) for shipped behavior and remaining differences, and [validation.md](validation.md) for measured evidence. Targets below remain design targets unless verified there.
 
 Build a browser application that provides the normal ground-station workflow and a persistent LLM copilot. The operator can describe a mission in chat or construct it on the map; both use one editable draft that the LLM can inspect and revise through conversation before upload. During operation, the backend continuously records and checks vehicle data, supplies bounded observations to an inference API, and presents evidence-linked assessments. An isolated SITL laboratory measures detection on faults whose identities are hidden from the monitor.
 
