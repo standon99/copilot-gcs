@@ -1,6 +1,16 @@
 # Validation record
 
-## Project icon and concise README
+## GitHub social preview publication
+
+On 2026-09-17, after the user made the repository public, the committed
+1280 × 640 `docs/brand/social-preview.png` was uploaded through GitHub's Social
+preview setting. The complete artwork was visually verified after reloading
+the settings page. The brand guide now records the applied image. The main
+README and implementation guide were reviewed and remain accurate. This update
+changes repository presentation and documentation only; application tests and
+simulator sessions were not rerun.
+
+## Project icon and concise README (historical, `1000c8d`)
 
 The README now focuses on features and running the application, with detailed
 setup, usage and development instructions in linked guides. The original shield
@@ -24,11 +34,11 @@ and 30 m hold, then LAND and disarming; the second remained disarmed. Both owned
 simulators and the temporary server were stopped afterward. Port 8080 remained
 stopped throughout.
 
-The authenticated GitHub repository settings were inspected. Social-preview
-upload is unavailable for this private repository; GitHub only supports a first
-upload for a public repository. The ready-to-upload PNG is committed alongside
-its source, and the icon appears in the repository README. Repository visibility
-was preserved. See the linked GitHub documentation in the brand guide.
+At that iteration, authenticated GitHub repository settings were inspected, but
+social-preview upload was unavailable while the repository was private. The PNG
+was committed alongside its source for a later upload, and the icon appeared in
+the repository README. The follow-up publication record above supersedes that
+upload limitation.
 
 ## Public documentation, license and setup verification (historical, `91a1877`)
 

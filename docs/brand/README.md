@@ -15,13 +15,12 @@ project's MIT license.
 ![Repository social preview](social-preview.png)
 
 GitHub provides a **Settings → General → Social preview → Edit → Upload an
-image** setting for repository link previews. Upload `social-preview.png` using
-an account with repository settings access. GitHub permits a first image upload
-for public repositories; private repositories can update an image uploaded
-previously. The setting is unavailable for this private repository as checked
-on 2026-09-17, so the preview is supplied here for future use. The icon is visible
-in the repository README. This does not change the owner's profile avatar or
-GitHub's standard repository-type glyph.
+image** setting for repository link previews. The committed `social-preview.png`
+was applied to `standon99/copilot-gcs` on 2026-09-17 after the repository became
+public, and verified after reloading its settings page. To replace it, upload the
+new export through the same setting using an account with repository settings
+access. The icon also appears in the repository README. This does not change
+the owner's profile avatar or GitHub's standard repository-type glyph.
 [GitHub instructions](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview).
 
 ## Regenerate PNGs
