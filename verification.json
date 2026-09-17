@@ -1,0 +1,45 @@
+{
+  "result": "PASS",
+  "vehicle": "ArduCopter 4.7.1",
+  "checks": [
+    "native SITL startup",
+    "MAVProxy TCP connection",
+    "UDP heartbeat",
+    "attitude telemetry",
+    "position telemetry",
+    "vehicle disarmed"
+  ],
+  "telemetry": {
+    "HEARTBEAT": {
+      "mavpackettype": "HEARTBEAT",
+      "type": 2,
+      "autopilot": 3,
+      "base_mode": 81,
+      "custom_mode": 0,
+      "system_status": 3,
+      "mavlink_version": 3
+    },
+    "ATTITUDE": {
+      "mavpackettype": "ATTITUDE",
+      "time_boot_ms": 15607,
+      "roll": 0.00035418765037320554,
+      "pitch": 0.00014307774836197495,
+      "yaw": -0.07391907274723053,
+      "rollspeed": 0.00018723166431300342,
+      "pitchspeed": 0.00011140952119603753,
+      "yawspeed": 0.028671329841017723
+    },
+    "GLOBAL_POSITION_INT": {
+      "mavpackettype": "GLOBAL_POSITION_INT",
+      "time_boot_ms": 15607,
+      "lat": -353632610,
+      "lon": 1491652299,
+      "alt": 584090,
+      "relative_alt": 0,
+      "vx": 0,
+      "vy": 0,
+      "vz": -1,
+      "hdg": 35577
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# Secrets: never commit environment files or credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Existing upstream source checkout is independently versioned.
+/ardupilot/
+.venv/
+node_modules/
+web/dist/
+dist/
+runtime/
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+.tools/
+test-results/
+playwright-report/
