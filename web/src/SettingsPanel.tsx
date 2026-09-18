@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
+import { capabilityLabel, useModelCapabilities } from "./modelCapabilities";
 
 export function SettingsPanel({
   config,
@@ -41,6 +42,7 @@ export function SettingsPanel({
   useEffect(() => {
     void run("load", async () => load(await api("/settings")));
   }, []);
+  const capabilities = useModelCapabilities(form, true);
   if (!form)
     return (
       <div className="page">
@@ -231,6 +233,7 @@ export function SettingsPanel({
               <option key={m} value={m} />
             ))}
           </datalist>
+          <p role="status">{capabilityLabel(capabilities)}</p>
           {models.length > 0 && (
             <label>
               Available models

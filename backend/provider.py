@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .config import ROOT
+from .inference_worker import has_image
 from .monitoring import AutomaticBudget, AutomaticRateLimited
 from .settings import credential_for, local_port, settings
 
@@ -60,6 +61,7 @@ def sandbox_command(base_url=None):
 class Provider:
     def __init__(self, settings_store=None):
         self.settings = settings_store or settings
+        self.capability_cache = {}
         self.monitor_slots = asyncio.Semaphore(2)
         self.planner_slots = asyncio.Semaphore(1)
         path = getattr(self.settings, "path", None)
@@ -69,6 +71,20 @@ class Provider:
 
     def automatic_ready(self, now=None):
         return self.automatic_budget.ready(self.settings.value.automatic_min_interval, now)
+
+    async def model_capabilities(self, options):
+        key = (options["base_url"], options["model"])
+        cached = self.capability_cache.get(key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+        result, _ = await self.request("", [], options, operation="capabilities")
+        caps = {"model": key[1], "base_url": key[0], **result["capabilities"]}
+        ttl = 300 if caps["vision"] is not None else 30
+        # Bound entries when operators explore many models/endpoints.
+        if len(self.capability_cache) >= 64:
+            self.capability_cache.pop(next(iter(self.capability_cache)))
+        self.capability_cache[key] = (time.monotonic() + ttl, caps)
+        return caps
 
     async def complete(
         self, system, payload, monitor=False, options=None, operation="chat", image=None
@@ -96,8 +112,24 @@ class Provider:
         return result["message"], meta
 
     async def request(self, system, messages, options, monitor=False, operation="chat", tools=None):
+        if has_image(messages):
+            caps = await self.model_capabilities(options)
+            if caps["vision"] is False:
+                raise ValueError(
+                    f"{options['model']} does not accept images. Choose a vision model in Settings, "
+                    "save, and attach the map again. No inference request was sent."
+                )
+            if tools and caps["tools"] is False:
+                raise ValueError(
+                    f"{options['model']} does not support tool calls. Choose a model that supports "
+                    "both images and tools in Settings. No inference request was sent."
+                )
         key = credential_for(options["base_url"])
-        timeout = options["inference_timeout"]
+        timeout = (
+            min(5, options["inference_timeout"])
+            if operation == "capabilities"
+            else options["inference_timeout"]
+        )
         async with self.monitor_slots if monitor else self.planner_slots:
             if monitor:
                 self.automatic_budget.reserve(self.settings.value.automatic_min_interval)

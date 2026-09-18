@@ -107,11 +107,36 @@ Onboard upload remains separate and supports mixed inclusion/exclusion banks.
 
 ## Vision map input
 
-Select a vision-capable model, choose **Attach map for vision model**, inspect the
+Select a model with image **and tool** support, choose **Attach map**, inspect the
 thumbnail and describe a boundary. A text model can use supplied coordinates;
 attaching an image does not give a text-only model vision. No model is switched
-automatically. The previous vision validation used qwen3.5:397b; this iteration's
-new native tool loop was tested with text coordinates, not a new vision run.
+automatically. For Ollama cloud, `gpt-oss:120b` is text-only; `qwen3.5:397b`
+reports image and tool support. Choose the model in **Settings → Model & endpoint**
+and save before attaching. A connection test alone does not test vision.
+
+`GET /api/settings/capabilities` checks the saved selection;
+`POST /api/settings/capabilities` checks an unsaved Preferences body. Both return
+`model`, `base_url`, and nullable `vision`/`tools` booleans. These are application
+metadata endpoints, separate from the model's GCS function-tool catalog.
+
+The app reads the configured endpoint's optional Ollama `/api/show` metadata,
+without an inference request. Settings displays image/tool support before saving;
+Chat checks the saved model. Known incompatible models disable map attachment,
+and the backend rejects image turns before inference. Metadata is cached by exact
+endpoint/model for five minutes (30 seconds for unknown support). The probe stays
+on the configured origin, uses the same credential scope, and has a five-second
+HTTP timeout. It does not send a prompt, image or vehicle data.
+
+Other OpenAI-compatible endpoints may not expose this metadata; support is shown
+as **unknown**, and image requests remain available. Provider failures show a
+fixed, actionable message for image rejection, authentication, rate limits or
+service errors; raw provider bodies and credentials are never displayed. The
+app neither retries these failures automatically nor raises the saved usage caps.
+
+The native vision check returned previews with Qwen using a 120-second timeout,
+but road alignment failed visual review even after a closer-image correction.
+See the [validation record](vision-compatibility-validation.json). A valid polygon
+and a confident model reply do not establish that the boundary follows the road.
 
 The actual map canvas is captured north-up, without tilt, at up to 1280 pixels per
 dimension, with a pixel grid and attribution. Rendered routes/areas are included;

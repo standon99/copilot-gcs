@@ -12,7 +12,7 @@ A web ground control station for ArduPilot **Copter, Plane and Rover**, with an 
 - **Flight workspace:** map, instruments and flight controls; separate Chat, Alerts and Watch rules panels.
 - **Planning:** waypoint editing, drawn inclusion/exclusion areas and verified fence upload; parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.
-- **Vision support:** attach the map and ask a vision model to propose boundaries. [AI interface](docs/ai-interface.md).
+- **Vision support:** attach the map to propose boundaries; Settings shows image/tool compatibility. [AI interface](docs/ai-interface.md).
 - **Your model and usage:** Ollama cloud or a local endpoint; saved prompts, per-vehicle monitoring and a shared automatic request limit.
 - **Visible watch rules:** describe extra concerns in chat; visible checks turn red and can prompt AI even with periodic monitoring off. Rehearse failures in Diagnostics.
 

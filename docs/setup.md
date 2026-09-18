@@ -153,6 +153,8 @@ Open the matching URL. Stop with **Ctrl+C**; shutdown stops app-owned simulators
 | Arm/mode rejected | Inspect native prearm/status messages, GPS/estimator readiness and the selected profile; keep checks enabled |
 | `Claim control` / conflicting lease | Select the correct vehicle and claim it; another browser may hold the renewable 30-second lease |
 | Model unavailable / malformed JSON | Check model ID, endpoint and timeout; use Test connection. No inference failure should be interpreted as “all clear” |
+| Map attachment unavailable / image HTTP 400 | Choose a model with image **and tool** support in Settings, then save. Ollama `gpt-oss:120b` is text-only; `qwen3.5:397b` supports both. A text connection test does not verify vision |
+| Map request times out | Large vision turns can exceed the default 45 s timeout. Adjust Inference timeout in Settings if desired (maximum 120 s); the app does not raise it or retry automatically |
 | `.env` model changes seem ignored | Saved Settings override non-secret initial defaults; edit/save in the UI. Key changes require a server restart |
 | Trial disabled / no assessments | Enable periodic monitoring and check the default interval plus shared automatic spacing against trial duration; inspect provider availability |
 | Port already occupied | Stop the earlier server or use `COPILOT_PORT=8091 ./start.sh` and the matching URL |

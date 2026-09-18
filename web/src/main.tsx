@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { api } from "./api";
+import { useModelCapabilities } from "./modelCapabilities";
 import { SettingsPanel } from "./SettingsPanel";
 import { FlightDeck } from "./FlightDeck";
 import { AlertsPanel } from "./AlertsPanel";
@@ -963,6 +964,9 @@ function App() {
   const chatInput = useRef<HTMLTextAreaElement>(null);
   const captureMap = useRef<null | (() => Promise<Json>)>(null);
   const [mapAttachment, setMapAttachment] = useState<Json>(null);
+  const modelCapabilities = useModelCapabilities(config);
+  const mapModelBlocked =
+    modelCapabilities?.vision === false || modelCapabilities?.tools === false;
   const selectedVehicleRef = useRef(vid);
   selectedVehicleRef.current = vid;
   const setWork = (data: Json) => {
@@ -1246,6 +1250,12 @@ function App() {
   const sendChat = () => {
     if (!chat.trim() || chatBusy || !current || work?.vehicle_id !== vid)
       return;
+    if (interactionMode && mapAttachment && mapModelBlocked) {
+      setError(
+        "Choose a model with image and tool support in Settings before sending the map.",
+      );
+      return;
+    }
     if (
       interactionMode &&
       !interactionTargets.some((id) => vehicles.some((v) => v.id === id))
@@ -3192,7 +3202,7 @@ function App() {
                           />
                           <span>
                             Map attached · {mapAttachment.width} ×{" "}
-                            {mapAttachment.height}. Requires a vision model.
+                            {mapAttachment.height} · {config.model}
                           </span>
                           <button onClick={() => setMapAttachment(null)}>
                             Remove image
@@ -3201,7 +3211,9 @@ function App() {
                       ) : (
                         <button
                           disabled={
-                            chatBusy || !["plan", "flight"].includes(tab)
+                            chatBusy ||
+                            mapModelBlocked ||
+                            !["plan", "flight"].includes(tab)
                           }
                           onClick={() =>
                             guard(async () => {
@@ -3211,9 +3223,29 @@ function App() {
                             })
                           }
                         >
-                          Attach map for vision model
+                          Attach map
                         </button>
                       )}
+                      {mapModelBlocked && (
+                        <span role="status">
+                          {config.model}:{" "}
+                          {modelCapabilities?.vision === false
+                            ? "text only"
+                            : "tool calls unavailable"}
+                          . Choose a model with image and tool support.{" "}
+                          <button onClick={() => setTab("settings")}>
+                            Model settings
+                          </button>
+                        </span>
+                      )}
+                      {!mapModelBlocked &&
+                        modelCapabilities?.vision == null && (
+                          <span>
+                            {modelCapabilities
+                              ? "Image support unknown; check the selected model."
+                              : "Checking image support…"}
+                          </span>
+                        )}
                       <a
                         href="/api/ai/capabilities"
                         target="_blank"
@@ -3257,7 +3289,10 @@ function App() {
                     <button
                       aria-label="Send to copilot"
                       disabled={
-                        chatBusy || !chat.trim() || work?.vehicle_id !== vid
+                        chatBusy ||
+                        !chat.trim() ||
+                        work?.vehicle_id !== vid ||
+                        (interactionMode && !!mapAttachment && mapModelBlocked)
                       }
                       onClick={sendChat}
                     >

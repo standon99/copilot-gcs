@@ -86,8 +86,14 @@ until acceptance checks the proposal ID, draft revision and boot epoch.
 Map images are operator-attached PNGs only, bounded in dimensions/size, stamped
 with draft/vehicle/time and Web Mercator bounds. The browser resets bearing/tilt,
 adds pixel coordinates and attribution, and exposes a thumbnail before sending.
-The server converts pixel polygons and rejects invalid geometry. Models without
-vision can use geographic coordinates; no model is selected automatically.
+The server converts pixel polygons and rejects invalid geometry. Settings and
+Chat check optional Ollama model metadata on the configured origin; known
+text-only models cannot send map attachments, and vision models without tools
+cannot run image editing turns. Unknown compatible-provider capabilities remain
+usable and are labelled unknown. The worker classifies HTTP failures with fixed
+messages, without reflecting provider bodies. Metadata caches are scoped to
+endpoint/model, with bounded timeouts and no inference. Models without vision
+can use geographic coordinates; no model is selected automatically.
 Only planning receives the attachment; monitoring/trials are unchanged.
 
 Fence-bank download and upload use MAV_MISSION_TYPE_FENCE=1; regular missions

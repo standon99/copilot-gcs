@@ -1,5 +1,19 @@
 # Actual application screenshots
 
+The map-compatibility fix based on feb4984 refreshed **settings.jpg** and added
+**model-compatibility.jpg** and **vision-correction.jpg** on 2026-09-18, from the
+actual production page at port 8091 with a separate disarmed Copter runtime.
+Settings and Chat show the verified `gpt-oss:120b` text-only restriction.
+The vision image shows a real Qwen follow-up with an **inaccurate** road boundary
+and unwanted top extension; its claim of correct tracing is model output, not a
+validated result. Neither preview was accepted. These are inspected, unmodified
+1796 × 1043 browser captures with attribution and no credentials.
+[Measured results](../vision-compatibility-validation.json).
+
+![Text-model attachment restriction](model-compatibility.jpg)
+
+The remaining captures below are from the preceding iteration:
+
 Captured 2026-09-18 from the production React build in Chrome at
 http://127.0.0.1:8091 with an isolated runtime and disarmed native Copter SITL.
 Iteration based on 2dc7a4b; pinned firmware
@@ -12,7 +26,7 @@ Iteration based on 2dc7a4b; pinned firmware
 | flight.jpg | Disarmed Copter, instruments, last-read fence bank, test watch alert and real (now stale) event advice |
 | geofence-proposal.jpg | Actual qwen3.5:397b native tool turn; purple inclusion preview from supplied geographic coordinates, before acceptance |
 | tool-actions.jpg | Actual gpt-oss:120b read → update waypoint → validate tool sequence |
-| settings.jpg | Saved 300 s default interval, 60 s shared cap, 12-call turn limit; periodic/event inference both off after testing |
+| settings.jpg | Refreshed for the compatibility fix: model capability status, saved 300 s default interval, 60 s shared cap; periodic/event inference both off |
 | diagnostics.jpg | Failure controls and effective-cadence warning; no fault injected |
 
 These are direct 1796 × 1043 JPEG browser captures, inspected for layout and

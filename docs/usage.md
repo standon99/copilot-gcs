@@ -162,8 +162,13 @@ Both upload paths disable automatic enable-on-flight behavior. Report Only does
 not command recovery. A fence's breach action does not guarantee automatic
 detouring. See [ArduPilot fencing](https://ardupilot.org/copter/docs/common-polygon_fence.html).
 
-For AI-drawn boundaries, select a vision model, **Attach map for vision model**
-and describe the area. Inspect the purple boundary before **Accept areas**;
+For AI-drawn boundaries, choose a model with image **and tool** support in
+**Settings → Model & endpoint**, save, then **Attach map** and describe the area.
+Settings reports those capabilities; known incompatible models disable attachment
+with a link back to Settings. Ollama `gpt-oss:120b` is text-only;
+`qwen3.5:397b` supports images and tools. Unknown endpoint capabilities remain
+usable. Large vision requests can need a longer **Inference timeout** (up to 120 s).
+Inspect the purple boundary before **Accept areas**;
 acceptance edits the local draft only. A text model can also propose boundaries
 from supplied coordinates. The [documented AI interface](ai-interface.md) is
 sent to the model on every planning request.

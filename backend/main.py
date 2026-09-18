@@ -602,6 +602,16 @@ async def provider_models(body: Preferences):
         raise HTTPException(502, str(exc))
 
 
+@app.get("/api/settings/capabilities")
+async def selected_model_capabilities():
+    return await provider.model_capabilities(settings.get())
+
+
+@app.post("/api/settings/capabilities")
+async def preview_model_capabilities(body: Preferences):
+    return await provider.model_capabilities(body.model_dump())
+
+
 @app.post("/api/settings/test")
 async def provider_test(body: Preferences):
     try:

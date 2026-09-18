@@ -1,5 +1,47 @@
 # Validation record
 
+## Map-image model compatibility — 2026-09-18
+
+Iteration based on feb4984. The two reported map failures used **gpt-oss:120b**
+and returned HTTP 400 on the first call, before any tools ran. Ollama `/api/show`
+confirmed no vision capability for that model; **qwen3.5:397b** reported both
+vision and tools. Capability discovery now controls the attachment UI and backend
+preflight. Unknown endpoints remain usable. Tests verify that rejected images
+never reach inference, text chat remains available, caches respect endpoint/model,
+local requests carry no cloud key, and provider error/timeout text reveals no
+response body or credential.
+
+**168 Python tests and 11 frontend tests passed**, with Ruff, formatting,
+diff checks and the production build (the existing Vite bundle-size advisory
+remains). Browser checks verified disabled attachment for the text model, the
+Model settings link, capability display and discovery for an unsaved model choice.
+Actual Settings and compatibility screenshots were captured.
+
+An isolated disarmed Copter exercised native image turns with actual satellite
+captures. The first Qwen turn exceeded the original **45 s** timeout. A bounded
+retry using **120 s**, six calls maximum and 4,096 output tokens per call completed
+in **86.68 s**, two calls and one `propose_geofence` action (13,594 reported tokens).
+A closer-image correction completed in **53.50 s**, two calls and one action
+(13,497 reported tokens). Pixel polygons were converted, validated and displayed
+as previews. No proposal was accepted or uploaded; no vehicle command ran.
+
+**Road alignment did not pass visual review.** The first preview was an oversized
+rectangle; the correction still deviated from the road and retained an unwanted
+extension. The model's claims that it followed the road were inaccurate. This
+verifies image delivery and tool integration, not reliable road segmentation or
+flight-ready fencing. The [measured record](vision-compatibility-validation.json)
+and [actual correction screenshot](screenshots/vision-correction.jpg) retain that
+limitation. Five inference requests were issued, including the timeout; its
+token usage is unavailable. Automatic inference stayed off in the test runtime.
+
+README, AI interface, implementation, usage, setup troubleshooting and screenshot
+notes were updated. Setup commands, dependencies and firmware pin were reviewed
+and remain unchanged. Saved user inference preferences were preserved separately
+from the test settings. The 8080 app was restarted with disarmed Copter/Plane
+sessions; settings, both drafts and all six chat entries were verified unchanged.
+Session IDs changed and control leases were reset. The isolated 8091 server and
+its test simulator were stopped after verification.
+
 ## Native tool loop, inclusion fences and compact header — 2026-09-18
 
 Iteration based on 2dc7a4b. **157 Python tests and 11 frontend tests passed**,

@@ -1,0 +1,241 @@
+{
+  "date": "2026-09-18",
+  "base_commit": "feb4984",
+  "reported_failures": {
+    "count": 2,
+    "model": "gpt-oss:120b",
+    "error": "Provider HTTP 400",
+    "tools_executed": 0,
+    "cause": "Selected model does not support images, confirmed by provider capabilities."
+  },
+  "test_inference_requests": 5,
+  "test_automatic_requests": 0,
+  "turns": [
+    {
+      "model": "qwen3.5:397b",
+      "request": "Using the attached satellite map, propose an inclusion geofence whose eastern edge follows the road immediately east of the airstrip near the vehicle home. Extend about 1 km north and south of the airstrip centre, and form a box extending 1 km west of the airstrip. Use the visible image to follow the road. Leave it as a preview for me to review.",
+      "map": {
+        "vehicle_id": "4473aa87926e",
+        "draft_revision": 0,
+        "captured_at": 1789749033.933,
+        "width": 1280,
+        "height": 496,
+        "bounds": [
+          149.07049481746446,
+          -35.39319977625599,
+          149.2599649825405,
+          -35.333311117166986
+        ],
+        "projection": "Web Mercator, north-up, zero pitch",
+        "pixel_origin": "top left; x right, y down; use image pixels, not screen pixels",
+        "sha256": "5af3f6d9ef8be4e046ffbf1638c34051c41d8a771fd23abb1f9d7701b316c0df"
+      },
+      "status": "failed",
+      "error": "No turn changes applied: ReadTimeout: inference request failed",
+      "model_calls": 1,
+      "duration_s": 45.83,
+      "limits": {
+        "timeout_s": 45,
+        "max_rounds": 12,
+        "max_output_tokens": 2500
+      }
+    },
+    {
+      "model": "qwen3.5:397b",
+      "request": "Using the attached satellite map, propose an inclusion geofence whose eastern edge follows the road immediately east of the airstrip near the vehicle home. Extend about 1 km north and south of the airstrip centre, and form a box extending 1 km west of the airstrip. Use the visible image to follow the road. Leave it as a preview for me to review.",
+      "map": {
+        "vehicle_id": "4473aa87926e",
+        "draft_revision": 0,
+        "captured_at": 1789749163.301,
+        "width": 1280,
+        "height": 496,
+        "bounds": [
+          149.07049481746446,
+          -35.39319977625599,
+          149.2599649825405,
+          -35.333311117166986
+        ],
+        "projection": "Web Mercator, north-up, zero pitch",
+        "pixel_origin": "top left; x right, y down; use image pixels, not screen pixels",
+        "sha256": "5af3f6d9ef8be4e046ffbf1638c34051c41d8a771fd23abb1f9d7701b316c0df"
+      },
+      "status": "preview_created",
+      "model_meta": {
+        "model": "qwen3.5:397b",
+        "latency_s": 86.68,
+        "usage": {
+          "prompt_tokens": 9867,
+          "completion_tokens": 3727,
+          "total_tokens": 13594
+        },
+        "filesystem_isolated": true,
+        "settings_revision": 1,
+        "endpoint": "https://ollama.com/v1",
+        "prompt_sha256": "d925b53e5758282f7a15d368a544127eabbd0f9f18d3b40257069acf0fc16727",
+        "rounds": 2,
+        "tool_calls": 1
+      },
+      "tool_arguments": [
+        {
+          "vehicle_id": "4473aa87926e",
+          "kind": "inclusion",
+          "coordinate_space": "map_pixels",
+          "polygons": [
+            [
+              [
+                580,
+                175
+              ],
+              [
+                790,
+                175
+              ],
+              [
+                790,
+                325
+              ],
+              [
+                580,
+                325
+              ]
+            ]
+          ],
+          "inclusion_mode": "intersection",
+          "reason": "Inclusion geofence preview: eastern edge follows road immediately east of airstrip near home (-35.363261, 149.1652299), extending approximately 1 km north and south of airstrip centre, with western boundary 1 km west of airstrip. Box shape based on visual inspection of attached satellite map in map_pixels coordinate space."
+        }
+      ],
+      "visual_result": "Road alignment is inaccurate; do not treat the model claim as validation.",
+      "limits": {
+        "timeout_s": 120,
+        "max_rounds": 6,
+        "max_output_tokens": 4096
+      }
+    },
+    {
+      "model": "qwen3.5:397b",
+      "request": "The eastern boundary in that preview is not following the road beside the airstrip. I attached a closer map. Please move the eastern edge onto the visible road immediately east of the airstrip near home, following its bends rather than assuming a vertical straight line. Keep the other edges about 1 km west, north and south of the airstrip. Leave the corrected inclusion as a preview.",
+      "map": {
+        "vehicle_id": "4473aa87926e",
+        "draft_revision": 0,
+        "captured_at": 1789749386.597,
+        "width": 1280,
+        "height": 896,
+        "bounds": [
+          149.14154612936926,
+          -35.37677224815807,
+          149.18891367063856,
+          -35.349747490258466
+        ],
+        "projection": "Web Mercator, north-up, zero pitch",
+        "pixel_origin": "top left; x right, y down; use image pixels, not screen pixels",
+        "sha256": "76952ba8ba4411c71dd75fa7e42a21bc78d7cc9ce4d5662a96cce3333b990a57"
+      },
+      "status": "preview_created",
+      "model_meta": {
+        "model": "qwen3.5:397b",
+        "latency_s": 53.5,
+        "usage": {
+          "prompt_tokens": 12129,
+          "completion_tokens": 1368,
+          "total_tokens": 13497
+        },
+        "filesystem_isolated": true,
+        "settings_revision": 1,
+        "endpoint": "https://ollama.com/v1",
+        "prompt_sha256": "d925b53e5758282f7a15d368a544127eabbd0f9f18d3b40257069acf0fc16727",
+        "rounds": 2,
+        "tool_calls": 1
+      },
+      "tool_arguments": [
+        {
+          "vehicle_id": "4473aa87926e",
+          "kind": "inclusion",
+          "reason": "Correct eastern boundary to follow visible road east of airstrip instead of straight vertical line. Keep other edges ~1km west/north/south of airstrip centre.",
+          "coordinate_space": "map_pixels",
+          "inclusion_mode": "intersection",
+          "polygons": [
+            [
+              [
+                400,
+                200
+              ],
+              [
+                1200,
+                200
+              ],
+              [
+                1200,
+                250
+              ],
+              [
+                700,
+                250
+              ],
+              [
+                680,
+                300
+              ],
+              [
+                670,
+                350
+              ],
+              [
+                665,
+                400
+              ],
+              [
+                660,
+                450
+              ],
+              [
+                658,
+                500
+              ],
+              [
+                657,
+                550
+              ],
+              [
+                656,
+                600
+              ],
+              [
+                655,
+                650
+              ],
+              [
+                655,
+                700
+              ],
+              [
+                656,
+                750
+              ],
+              [
+                658,
+                800
+              ],
+              [
+                400,
+                800
+              ],
+              [
+                400,
+                200
+              ]
+            ]
+          ]
+        }
+      ],
+      "visual_result": "Road alignment is inaccurate; do not treat the model claim as validation.",
+      "limits": {
+        "timeout_s": 120,
+        "max_rounds": 6,
+        "max_output_tokens": 4096
+      }
+    }
+  ],
+  "no_vehicle_writes": true,
+  "previews_accepted": 0,
+  "scope": "Image delivery and native tool integration verified. Road segmentation/alignment NOT validated."
+}

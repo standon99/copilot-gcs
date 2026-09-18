@@ -6,8 +6,52 @@ recordings and simulator truth. The key only arrives through stdin.
 
 import json
 import sys
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+
+
+def model_capabilities(client, request, headers):
+    """Optional Ollama metadata, on the configured origin only. No inference."""
+    url = urlsplit(request["base_url"])
+    if not url.path.endswith("/v1"):
+        return {"vision": None, "tools": None}
+    endpoint = urlunsplit((url.scheme, url.netloc, url.path[:-3] + "/api/show", "", ""))
+    try:
+        response = client.post(endpoint, headers=headers, json={"model": request["model"]})
+        data = response.json() if response.status_code == 200 else {}
+        caps = data.get("capabilities") if isinstance(data, dict) else None
+        if isinstance(caps, list) and caps and all(isinstance(c, str) for c in caps):
+            return {"vision": "vision" in caps, "tools": "tools" in caps}
+    except (httpx.HTTPError, ValueError):
+        pass
+    # Other OpenAI-compatible endpoints need not implement this metadata API.
+    return {"vision": None, "tools": None}
+
+
+def has_image(messages):
+    return any(
+        isinstance(m.get("content"), list)
+        and any(p.get("type") == "image_url" for p in m["content"] if isinstance(p, dict))
+        for m in messages
+    )
+
+
+def provider_error(response, messages):
+    """Classify errors without reflecting provider bodies, prompts or secrets."""
+    status = response.status_code
+    if status in (401, 403):
+        return f"Provider authentication/access failed (HTTP {status}); check the endpoint and credential"
+    if status == 429:
+        return "Provider usage/rate limit reached (HTTP 429); wait or check your provider allowance"
+    if status == 400 and has_image(messages):
+        return (
+            "Provider rejected the map-image request (HTTP 400); check that the selected "
+            "model supports images and tool calls in Settings"
+        )
+    if status >= 500:
+        return f"Provider service error (HTTP {status}); try again later"
+    return f"Provider rejected the request (HTTP {status}); check the selected model and endpoint"
 
 
 def main():
@@ -17,10 +61,13 @@ def main():
             headers = (
                 {"Authorization": "Bearer " + request["api_key"]} if request["api_key"] else {}
             )
+            if request.get("operation") == "capabilities":
+                print(json.dumps({"capabilities": model_capabilities(client, request, headers)}))
+                return
             if request.get("operation") == "models":
                 r = client.get(request["base_url"] + "/models", headers=headers)
                 if r.status_code != 200:
-                    print(json.dumps({"error": f"Provider HTTP {r.status_code}"}))
+                    print(json.dumps({"error": provider_error(r, [])}))
                     return
                 print(
                     json.dumps(
@@ -49,7 +96,7 @@ def main():
                 },
             )
             if r.status_code != 200:
-                print(json.dumps({"error": f"Provider HTTP {r.status_code}"}))
+                print(json.dumps({"error": provider_error(r, request["messages"])}))
                 return
             data = r.json()
             raw = data["choices"][0]["message"]
@@ -67,6 +114,14 @@ def main():
                     }
                 )
             )
+    except httpx.TimeoutException:
+        print(
+            json.dumps(
+                {
+                    "error": f"Model request exceeded the {request['timeout']}-second timeout; adjust Inference timeout in Settings if needed"
+                }
+            )
+        )
     except Exception as exc:
         # Never reflect headers, response bodies, request payloads or keys.
         print(json.dumps({"error": type(exc).__name__ + ": inference request failed"}))
