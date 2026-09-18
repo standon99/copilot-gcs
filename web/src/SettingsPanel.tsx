@@ -14,7 +14,7 @@ export function SettingsPanel({
   const [defaults, setDefaults] = useState<any>({}),
     [models, setModels] = useState<string[]>([]);
   const [contracts, setContracts] = useState<any>({});
-  const [prompt, setPrompt] = useState("monitor"),
+  const [prompt, setPrompt] = useState("agent"),
     [busy, setBusy] = useState("");
   const [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -78,10 +78,10 @@ export function SettingsPanel({
               checked={form.monitor_enabled}
               onChange={(e) => change({ monitor_enabled: e.target.checked })}
             />
-            Enable automatic assessments (scheduled and watch-triggered)
+            Allow periodic AI assessments
           </label>
           <label>
-            Wait between completed assessments (seconds)
+            Default periodic interval (seconds)
             <input
               type="number"
               min="10"
@@ -100,10 +100,30 @@ export function SettingsPanel({
             ))}
           </div>
           <p>
-            {form.monitor_enabled
-              ? `At most about ${Math.ceil(3600 / Math.max(10, form.monitor_interval))} scheduled assessments per hour per enabled vehicle; ${activeCount} currently enabled sessions. Watch triggers can add calls. Each assessment can use one repair request.`
-              : "Automatic model calls will be paused globally. Chat and connection tests remain available when you request them."}{" "}
-            Numerical telemetry checks continue.
+            {activeCount} sessions have periodic monitoring enabled. The model
+            can change each vehicle’s interval and toggle; this Settings switch
+            is the master permission.
+          </p>
+          <label>
+            Hard minimum between automatic API requests (seconds, all vehicles
+            combined)
+            <input
+              type="number"
+              min="10"
+              max="86400"
+              value={form.automatic_min_interval}
+              onChange={(e) =>
+                change({ automatic_min_interval: +e.target.value })
+              }
+            />
+          </label>
+          <p>
+            At most{" "}
+            {Math.ceil(3600 / Math.max(10, form.automatic_min_interval))}{" "}
+            automatic requests per hour across this installation. Periodic
+            assessments, watch events and repair requests share this limit. The
+            model cannot raise it. Failed requests count; manual chat and
+            connection tests are separate.
           </p>
           <label className="check-row">
             <input
@@ -128,12 +148,30 @@ export function SettingsPanel({
             />
           </label>
           <p>
-            The first trigger bypasses the scheduled interval. Further triggers
-            are combined while an assessment is running or this limit applies.
-            Local alerts turn red immediately. Global or vehicle pause stops
-            both kinds of automatic call. Custom watches do not trigger AI
-            during diagnostics.
+            Watch advice works with periodic monitoring off. Triggers combine
+            while the usage limit applies; local alerts appear immediately.
+            Custom watches do not request AI during Diagnostics.
           </p>
+          <label>
+            Maximum model calls per chat turn
+            <input
+              type="number"
+              min="2"
+              max="16"
+              value={form.agent_max_rounds}
+              onChange={(e) => change({ agent_max_rounds: +e.target.value })}
+            />
+          </label>
+          <label>
+            Maximum output tokens per chat call
+            <input
+              type="number"
+              min="512"
+              max="4096"
+              value={form.agent_max_tokens}
+              onChange={(e) => change({ agent_max_tokens: +e.target.value })}
+            />
+          </label>
           <label>
             Inference timeout (seconds)
             <input
@@ -251,17 +289,18 @@ export function SettingsPanel({
         <label>
           Prompt to edit
           <select value={prompt} onChange={(e) => setPrompt(e.target.value)}>
+            <option value="agent">Chat tools and planning</option>
             <option value="monitor">Continuous assessment</option>
-            <option value="planner">Mission planning & review</option>
+            <option value="planner">Legacy planner (retained)</option>
             <option value="intent">Mission statement interpretation</option>
-            <option value="interaction">Multi-vehicle interaction</option>
+            <option value="interaction">Legacy interaction (retained)</option>
           </select>
         </label>
         <p>
-          Keep the JSON response contract and evidence requirements. Validation
-          and vehicle-write restrictions remain enforced by the application. For
-          blinded tests, avoid scenario names or expected answers in your
-          prompts.
+          Chat uses native tools and a plain final reply; assessments use JSON
+          with evidence. Validation and vehicle-write restrictions remain
+          enforced by the application. For blinded tests, avoid scenario names
+          or expected answers in your prompts.
         </p>
         <textarea
           aria-label="System prompt"

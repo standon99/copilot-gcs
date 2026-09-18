@@ -5,7 +5,7 @@ for ArduPilot Copter, Plane and Rover.
 
 1. Start one or more simulations, or connect external telemetry.
 2. Select a vehicle. In **Flight**, describe a mission in **Chat**, or use
-   **Plan mission** to edit waypoints and exclusion areas.
+   **Plan mission** to edit waypoints and inclusion/exclusion areas.
 3. Inspect the draft and run **Check draft**. Upload the reviewed version.
 4. **Flight controls** offers the next explicit action: enable controls, prepare
    the launch mode, arm, then start. **Live map** shows progress.
@@ -28,7 +28,10 @@ implemented. External MAVLink connections provide telemetry; writes remain
 limited to app-owned simulators. Simulation checks are not physical-flight
 validation.
 
-AI can edit drafts and propose parameters, exclusion areas and watch rules.
+AI uses a bounded tool loop to read, edit and check drafts, propose parameters
+and either fence type, and configure requested advisory watches and monitoring.
+Settings owns the shared automatic request limit. The name, connection symbol
+and selected model share a compact pill in the vehicle bar.
 The operator applies onboard changes and controls flight. Vision input is an
 explicit map attachment, not a continuous image feed. See the
 [AI interface](ai-interface.md), [usage](usage.md), [implementation](implementation.md)

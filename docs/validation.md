@@ -1,6 +1,80 @@
 # Validation record
 
-## Flight workspace, exclusion areas and vision — 2026-09-17
+## Native tool loop, inclusion fences and compact header — 2026-09-18
+
+Iteration based on 2dc7a4b. **157 Python tests and 11 frontend tests passed**,
+with Ruff, formatting, diff checks and the production build. Vite retains its
+bundle-size advisory. New checks cover native tool-result feedback, typed errors,
+read-only/target guards, stale sessions and revisions, cancellation/rollback,
+mandatory final validation, repeated-error termination, shared persisted usage
+limits, oldest-due scheduling across vehicles, independent event advice, windowed
+altitude evidence and inclusion geometry.
+
+A real **qwen3.5:397b** turn completed eight tool actions in four model calls
+(**24.89 s**, 24,222 reported total tokens across calls). It read the mission and
+configuration, changed a waypoint to 35 m above home, validated, enabled the
+requested yaw-rate watch, turned periodic monitoring off, kept per-vehicle watch
+advice on, and proposed an inclusion while preserving the exclusion. The global
+Settings switches remained off and were accurately reported as blocking automatic
+inference. Geometry stayed a preview until browser acceptance.
+
+A later **gpt-oss:120b** turn read, changed that waypoint from 35 to 36 m and
+validated it in four model calls (**4.68 s**, 12,273 reported total tokens).
+Neither turn uploaded a mission, applied parameters or commanded flight. The
+model's wording about being ready to upload did not grant a review or write lease;
+those remain separate operator checks/actions.
+
+Development failures are retained in the [measured record](tool-loop-validation.json):
+an eight-round malformed fence attempt, two GPT-OSS HTTP-500 turns, and a Qwen
+turn repeatedly string-encoding an optional watch object. All discarded staged
+edits. Schemas were simplified for provider compatibility; identical repeated
+errors now terminate early. The longer GPT-OSS request was not rerun after the
+last schema fix; the successful final complex check used Qwen. This is integration
+evidence, not a general model-reliability result. The checks issued **43 provider
+requests**, including failed turns, two compatibility probes and one event
+assessment; failed-call token usage is unavailable.
+
+Native **disarmed Copter, Plane and Rover** verified mixed 5001 inclusion / 5002
+exclusion banks by upload and independent readback. Plane and Rover verified both
+union and intersection modes, preserving unrelated FENCE_OPTIONS bits. Copter
+uploaded the actual accepted model proposal. Clearing that mixed bank verified an
+empty readback while retaining enabled circle/ceiling settings. Unit cases cover
+concavity, boundary contact, home/departure/return, empty intersections, union gaps,
+unsupported bank types and the combined 70-vertex limit.
+
+One real **gpt-oss:120b** watch assessment completed in **4.37 s** with global and
+per-vehicle periodic monitoring off. It cited supplied evidence about the disarmed,
+stationary vehicle. A deliberately low test voltage threshold caused the event;
+this was a pipeline check, not a blinded fault trial. A second trigger turned red
+and queued without another request inside the 60-second shared cap. Event advice
+was then disabled in the test installation. The response's “fully charged” claim
+is model interpretation of reported values, not an independent battery diagnosis.
+
+Chrome checks verified inclusion preview/accept, manual drawing, numerical
+blockers for an invalid region, Undo without added waypoints, rule details/prompts,
+red event cards, tool traces, settings and the compact status pill. All affected
+[screenshots](screenshots/README.md) were refreshed from the actual page. No new
+vision attachment, fence-breach recovery, airborne fault or physical-flight test
+was run. Previous vision and flight records below remain historical.
+
+The local-stub regression check also verified endpoint selection, frozen Settings
+during a trial, GPS injection/cancel restoration and periodic pause with zero
+cloud calls. An initial run against 8080 timed out behind its existing sessions;
+preferences were restored automatically. The harness now accepts `--url` for
+an isolated server and explicitly sets its test-only automatic cap. The shared
+scheduler selects the oldest due periodic assessment across all vehicles, with
+oldest queued watch events first, instead of using vehicle insertion order.
+A final isolated three-profile local-stub check assessed Copter, Plane and Rover
+in three requests spaced 10.015 and 10.052 seconds apart under a 10-second cap.
+All remained disarmed; no cloud calls were made. The final 8080 restart cleared
+the temporary stub assessments from the initial harness run.
+
+The temporary 8091 server and its simulators were stopped. The updated 8080 app
+was restarted with disarmed Copter/Plane sessions; existing drafts and saved model,
+prompts and monitoring preferences were preserved. Setup commands and examples
+were checked and remain applicable; no dependency or firmware-pin change was needed.
+
+## Flight workspace, exclusion areas and vision — 2026-09-17 (historical)
 
 Iteration based on 338cd63. **132 Python tests and 11 frontend tests passed**,
 with Ruff checks and the production TypeScript/Vite build. Coverage includes

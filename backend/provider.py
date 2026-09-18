@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .config import ROOT
+from .monitoring import AutomaticBudget, AutomaticRateLimited
 from .settings import credential_for, local_port, settings
 
 
@@ -61,14 +62,45 @@ class Provider:
         self.settings = settings_store or settings
         self.monitor_slots = asyncio.Semaphore(2)
         self.planner_slots = asyncio.Semaphore(1)
+        path = getattr(self.settings, "path", None)
+        self.automatic_budget = AutomaticBudget(
+            path.parent / "automatic-usage.json" if path else None
+        )
+
+    def automatic_ready(self, now=None):
+        return self.automatic_budget.ready(self.settings.value.automatic_min_interval, now)
 
     async def complete(
         self, system, payload, monitor=False, options=None, operation="chat", image=None
     ):
         options = options or self.settings.get()
+        content = json.dumps(payload, allow_nan=False)
+        if image:
+            content = [
+                {"type": "text", "text": content},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        result, meta = await self.request(
+            system,
+            [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            options,
+            monitor=monitor,
+            operation=operation,
+        )
+        return (result["models"] if operation == "models" else decode_json(result["content"])), meta
+
+    async def tool_turn(self, system, messages, tools, options):
+        result, meta = await self.request(system, messages, options, operation="tools", tools=tools)
+        if result.get("finish_reason") == "length":
+            raise ValueError("Model output token limit reached; no turn changes applied")
+        return result["message"], meta
+
+    async def request(self, system, messages, options, monitor=False, operation="chat", tools=None):
         key = credential_for(options["base_url"])
         timeout = options["inference_timeout"]
         async with self.monitor_slots if monitor else self.planner_slots:
+            if monitor:
+                self.automatic_budget.reserve(self.settings.value.automatic_min_interval)
             command, isolated = sandbox_command(options["base_url"])
             env = {
                 k: v
@@ -89,20 +121,11 @@ class Provider:
                 "model": options["model"],
                 "api_key": key,
                 "timeout": timeout,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {
-                        "role": "user",
-                        "content": (
-                            [
-                                {"type": "text", "text": json.dumps(payload, allow_nan=False)},
-                                {"type": "image_url", "image_url": {"url": image}},
-                            ]
-                            if image
-                            else json.dumps(payload, allow_nan=False)
-                        ),
-                    },
-                ],
+                "messages": messages,
+                "tools": tools,
+                "max_tokens": options.get("agent_max_tokens", 2500)
+                if operation == "tools"
+                else 3500,
             }
             started = time.time()
             try:
@@ -120,9 +143,7 @@ class Provider:
             result = json.loads(stdout)
             if "error" in result:
                 raise RuntimeError(result["error"])
-            return (
-                result["models"] if operation == "models" else decode_json(result["content"])
-            ), {
+            return result, {
                 "model": options["model"],
                 "latency_s": round(time.time() - started, 2),
                 "usage": result.get("usage", {}),
@@ -158,6 +179,12 @@ class Provider:
                             "Every incident must cite exact supplied telemetry evidence_id strings; waypoint IDs and invented IDs are not evidence. Nominal status may use an empty incidents array."
                         )
                 break
+            except AutomaticRateLimited:
+                if attempt:
+                    raise AssessmentValidationError(
+                        "Invalid assessment; repair blocked by the hard usage limit", outputs
+                    )
+                raise
             except (ValueError, TypeError) as exc:
                 if attempt == 1:
                     raise AssessmentValidationError(

@@ -8,13 +8,14 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import API_KEY, BASE_URL, INFERENCE_TIMEOUT, MODEL, MONITOR_INTERVAL, RUNTIME
-from .prompts import INTENT_SYSTEM, INTERACTION_SYSTEM, MONITOR_SYSTEM, PLANNER_SYSTEM
+from .prompts import AGENT_SYSTEM, INTENT_SYSTEM, INTERACTION_SYSTEM, MONITOR_SYSTEM, PLANNER_SYSTEM
 
 DEFAULT_PROMPTS = {
     "monitor": MONITOR_SYSTEM,
     "planner": PLANNER_SYSTEM,
     "intent": INTENT_SYSTEM,
     "interaction": INTERACTION_SYSTEM,
+    "agent": AGENT_SYSTEM,
 }
 
 
@@ -59,6 +60,7 @@ class Prompts(BaseModel):
     planner: str = Field(default=PLANNER_SYSTEM, min_length=20, max_length=24000)
     intent: str = Field(default=INTENT_SYSTEM, min_length=20, max_length=24000)
     interaction: str = Field(default=INTERACTION_SYSTEM, min_length=20, max_length=24000)
+    agent: str = Field(default=AGENT_SYSTEM, min_length=20, max_length=24000)
 
 
 class Preferences(BaseModel):
@@ -70,6 +72,9 @@ class Preferences(BaseModel):
     watch_inference_enabled: bool = True
     watch_min_interval: int = Field(default=60, ge=10, le=3600)
     monitor_interval: int = Field(default=int(MONITOR_INTERVAL), ge=10, le=86400)
+    automatic_min_interval: int = Field(default=60, ge=10, le=86400)
+    agent_max_rounds: int = Field(default=12, ge=2, le=16)
+    agent_max_tokens: int = Field(default=2500, ge=512, le=4096)
     inference_timeout: int = Field(default=int(INFERENCE_TIMEOUT), ge=10, le=120)
     prompts: Prompts = Field(default_factory=Prompts)
 

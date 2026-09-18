@@ -213,7 +213,7 @@ def test_event_observation_keeps_exact_evidence_even_after_downsampling():
         ("operational", False, True, True, "Enabled"),
         ("telemetry", False, True, True, "telemetry-only"),
         ("operational", True, True, True, "diagnostics"),
-        ("operational", False, False, True, "paused"),
+        ("operational", False, False, True, "Enabled"),
         ("operational", False, True, False, "Settings"),
     ],
 )

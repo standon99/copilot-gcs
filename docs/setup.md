@@ -124,13 +124,13 @@ For local Ollama, leave the key empty, use `OLLAMA_BASE_URL=http://localhost:114
 
 Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. FastAPI serves the production frontend and same-origin API; a separate frontend development server is not needed.
 
-1. Open **Settings** before launching a vehicle. Set the model/endpoint, choose an assessment interval, and enable or pause automatic assessments. Save.
+1. Open **Settings** before launching a vehicle. Set the model/endpoint, choose the shared automatic request spacing and default interval, and set periodic/watch-advice permissions. Save.
 2. **Load models** checks model discovery; **Test connection (1 request)** makes an explicit inference request. Both use the values currently in the form. Save to activate them for normal requests.
 3. Select **copter → 1× → Start simulation**. Wait for heartbeat, GPS, home and parameter discovery; startup checks may take tens of seconds.
 4. Confirm the teal vehicle marker, live telemetry and flight instrument appear. No arming is needed for this check.
 5. Optionally repeat with Plane/Rover or use **2×** to launch two copters.
 
-A fresh settings store enables automatic assessments by default, with the initial interval read from `.env` (20 seconds in `.env.example`). Choose the desired usage policy in Settings before launching sessions. The screenshots show one installation paused with a five-minute interval; that saved preference is not shipped in Git.
+A fresh settings store enables automatic assessments by default, with the initial interval read from `.env` (20 seconds in `.env.example`). The shared automatic request spacing defaults to 60 seconds, so a shorter periodic interval is clamped. Periodic and watch-triggered advice have independent switches. Choose the desired usage policy in Settings before launching sessions. The screenshots show one installation paused with a five-minute interval; that saved preference is not shipped in Git.
 
 The server binds to loopback (`127.0.0.1`). `COPILOT_HOST` in the example file is not used to change that binding. To use another local port:
 
@@ -154,6 +154,6 @@ Open the matching URL. Stop with **Ctrl+C**; shutdown stops app-owned simulators
 | `Claim control` / conflicting lease | Select the correct vehicle and claim it; another browser may hold the renewable 30-second lease |
 | Model unavailable / malformed JSON | Check model ID, endpoint and timeout; use Test connection. No inference failure should be interpreted as “all clear” |
 | `.env` model changes seem ignored | Saved Settings override non-secret initial defaults; edit/save in the UI. Key changes require a server restart |
-| Trial disabled / no assessments | Enable global/per-vehicle monitoring and shorten the interval relative to trial duration; inspect provider availability |
+| Trial disabled / no assessments | Enable periodic monitoring and check the default interval plus shared automatic spacing against trial duration; inspect provider availability |
 | Port already occupied | Stop the earlier server or use `COPILOT_PORT=8091 ./start.sh` and the matching URL |
 | Pending proposal rejected | Check expiry, target, reboot, disarmed state and old value; request a fresh proposal instead of retrying blindly |

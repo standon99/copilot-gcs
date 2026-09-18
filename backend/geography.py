@@ -101,3 +101,18 @@ class ExclusionProposal(BaseModel):
                 raise ValueError("Pixel vertices require an operator-attached map image")
             polygons = [[map_image.geographic(p) for p in ring] for ring in polygons]
         return {"reason": self.reason, "polygons": validate_polygons(polygons)}
+
+
+def inclusion_region(polygons, mode="intersection"):
+    """Same inclusion policy as FENCE_OPTIONS bit 1 in the pinned firmware."""
+    if not polygons:
+        return None
+    shapes = [Polygon(ring) for ring in polygons]
+    region = shapes[0]
+    for shape in shapes[1:]:
+        region = region.union(shape) if mode == "union" else region.intersection(shape)
+    return region
+
+
+def strictly_inside(region, geometry):
+    return region.contains(geometry) and not region.boundary.intersects(geometry)

@@ -3,7 +3,9 @@
 Current UI and AI/geofence behavior is documented in [product](product.md),
 [implementation](implementation.md) and [AI interface](ai-interface.md).
 This document remains the architecture/design baseline; references to future
-dynamic model tools or the earlier four-step display are not current UI claims.
+unrestricted model tools or the earlier four-step display are not current UI claims.
+A bounded native tool loop, independent event-triggered advice, shared automatic
+request cap and inclusion polygons shipped in the 2026-09-18 implementation.
 
 
 Design baseline v0.3 · 2026-09-17 · The product is an AI-enabled ground control station; see [product.md](product.md) for its task-first direction. See [implementation.md](implementation.md) for shipped behavior and remaining differences, and [validation.md](validation.md) for measured evidence. Targets below remain design targets unless verified there.

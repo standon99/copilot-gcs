@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from shapely.geometry import LineString, Point, Polygon
 
 from .config import PROFILES
-from .geography import validate_polygons
+from .geography import inclusion_region, strictly_inside, validate_polygons
 
 
 class Waypoint(BaseModel):
@@ -34,11 +34,15 @@ class Intent(BaseModel):
     unresolved: list[str] = Field(default_factory=list, max_length=30)
     exclusions: list[list[tuple[float, float]]] = Field(default_factory=list, max_length=20)
 
+    inclusions: list[list[tuple[float, float]]] = Field(default_factory=list, max_length=20)
+    inclusion_mode: Literal["intersection", "union"] = "intersection"
+
     @model_validator(mode="after")
     def valid(self):
         if self.min_alt is not None and self.max_alt is not None and self.min_alt > self.max_alt:
             raise ValueError("Minimum altitude exceeds maximum")
         self.exclusions = validate_polygons(self.exclusions)
+        self.inclusions = validate_polygons(self.inclusions)
         return self
 
 
@@ -171,7 +175,43 @@ def check(draft, profile, home=None):
                     w.id,
                 )
             previous = point
-    if d.intent.exclusions and not home:
+    region = inclusion_region(d.intent.inclusions, d.intent.inclusion_mode)
+    if region is not None:
+        if region.is_empty or region.area <= 1e-14:
+            add(
+                "error",
+                "empty_inclusion",
+                "Inclusion areas have no permitted overlap; adjust them or select union.",
+            )
+        if home and not strictly_inside(region, Point(home["lon"], home["lat"])):
+            add("error", "outside_inclusion_home", "Home is outside or on the inclusion boundary.")
+        previous = (home["lon"], home["lat"]) if home else None
+        for w in d.waypoints:
+            point = (
+                ((home["lon"], home["lat"]) if home else None)
+                if w.command == 20
+                else ((w.lon, w.lat) if w.command in (16, 17, 19, 21, 22) else None)
+            )
+            if point is None:
+                continue
+            if not strictly_inside(region, Point(point)):
+                add(
+                    "error",
+                    "outside_inclusion_point",
+                    "Waypoint is outside or on the inclusion boundary.",
+                    w.id,
+                )
+            if previous:
+                geometry = Point(point) if previous == point else LineString([previous, point])
+                if not strictly_inside(region, geometry):
+                    add(
+                        "error",
+                        "outside_inclusion_leg",
+                        "Route leg (including departure/return) leaves or touches the inclusion boundary.",
+                        w.id,
+                    )
+            previous = point
+    if (d.intent.exclusions or d.intent.inclusions) and not home:
         add("error", "exclusion_home_unknown", "Home is needed to check departure and return legs.")
     if profile != "rover" and d.waypoints and d.waypoints[0].command != 22:
         add(

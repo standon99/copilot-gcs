@@ -1,0 +1,306 @@
+{
+  "date": "2026-09-18",
+  "base_commit": "2dc7a4b",
+  "firmware_commit": "dbe792162d06cab66c3475fd5556bf7a120f119e",
+  "automated": {
+    "python_tests": 157,
+    "frontend_tests": 11,
+    "ruff": "passed",
+    "production_build": "passed; existing bundle-size advisory"
+  },
+  "live_turns": [
+    {
+      "vehicle_id": "760058db184f",
+      "latency_s": 24.89,
+      "model": {
+        "model": "qwen3.5:397b",
+        "latency_s": 24.85,
+        "usage": {
+          "prompt_tokens": 22339,
+          "completion_tokens": 1883,
+          "total_tokens": 24222
+        },
+        "filesystem_isolated": true,
+        "settings_revision": 5,
+        "endpoint": "https://ollama.com/v1",
+        "prompt_sha256": "d925b53e5758282f7a15d368a544127eabbd0f9f18d3b40257069acf0fc16727",
+        "rounds": 4,
+        "tool_calls": 8
+      },
+      "tool_names": [
+        "get_mission",
+        "get_watch_rules",
+        "get_monitoring",
+        "update_waypoint",
+        "validate_mission",
+        "manage_watch",
+        "configure_monitoring",
+        "propose_geofence"
+      ],
+      "reply": "**Completed Changes (staged/preview until operator acceptance where noted):**\n\n1.  **Mission Update:** The \"inspect\" waypoint altitude has been updated to **35 metres above home** (frame 3). Mission validation passed with one informational finding (terrain/obstacles not verified by imagery). Upload is allowed.\n2.  **Watch Created & Enabled:** A new watch rule \"High yaw rate while armed\" was added and enabled. It triggers when absolute yaw rate > 30 \u00b0/s for 1 second while armed, with 2 \u00b0/s hysteresis and 60s cooldown. It will request AI advice to check recent yaw measurements and report uncertainty about response tracking.\n3.  **Monitoring Configuration:** Periodic monitoring has been disabled. Watch-triggered advice has been enabled. Note: The Settings block shows `periodic_allowed_in_settings: false` and `watch_advice_allowed_in_settings: false`, meaning the global Settings switches currently prevent these from taking full effect despite the local configuration.\n4.  **Geofence Proposal:** An inclusion polygon preview has been generated with the specified vertices in intersection mode. The existing exclusion polygon is preserved. This is a preview only and requires operator acceptance.\n\n**Remaining Issues/Notes:**\n*   **Settings Switches:** The global Settings currently block periodic monitoring and watch-triggered advice from being fully effective (`*_allowed_in_settings: false`). The local configuration changes are staged but may not function until Settings are adjusted by an operator.\n*   **Geofence:** The inclusion polygon is only a preview; it has not been accepted or applied yet.\n*   **Mission:** No critical validation errors found. The mission is ready for upload if desired (though upload was not requested).",
+      "watch": {
+        "label": "High yaw rate while armed",
+        "metric": "yaw_rate_abs_deg_s",
+        "operator": "gt",
+        "threshold": 30.0,
+        "scope": "armed",
+        "dwell_s": 1.0,
+        "hysteresis": 2.0,
+        "cooldown_s": 60,
+        "severity": "warning",
+        "reason": "Monitor for excessive yaw rotation",
+        "window_s": 1,
+        "request_ai": true,
+        "ai_prompt": "Check recent yaw measurements and report uncertainty about response tracking"
+      },
+      "monitoring": {
+        "revision": 1,
+        "periodic_enabled": false,
+        "interval_s": null,
+        "watch_advice_enabled": true,
+        "focus": "",
+        "periodic_effective": false,
+        "watch_advice_effective": false,
+        "effective_interval_s": 60,
+        "hard_min_interval_s": 60,
+        "periodic_allowed_in_settings": false,
+        "watch_advice_allowed_in_settings": false
+      },
+      "proposal_only": true
+    },
+    {
+      "model": {
+        "model": "gpt-oss:120b",
+        "latency_s": 4.64,
+        "usage": {
+          "prompt_tokens": 11789,
+          "completion_tokens": 484,
+          "total_tokens": 12273
+        },
+        "filesystem_isolated": true,
+        "settings_revision": 8,
+        "endpoint": "https://ollama.com/v1",
+        "prompt_sha256": "d925b53e5758282f7a15d368a544127eabbd0f9f18d3b40257069acf0fc16727",
+        "rounds": 4,
+        "tool_calls": 3
+      },
+      "tool_names": [
+        "get_mission",
+        "update_waypoint",
+        "validate_mission"
+      ],
+      "reply": "**Changes applied (staged and validated):**  \n- The **inspect waypoint** (ID\u202f`inspect`) altitude was updated from 35\u202fm to **36\u202fm above home** (frame\u202f3).  \n- Validation of the revised mission (revision\u202f6) succeeded; only an informational note about unverified terrain/obstacles was reported.  \n\n**Result:** The mission is now consistent with the operator\u2019s request and ready for upload (if later desired). No fences, watches, or monitoring settings were altered.",
+      "latency_s": 4.68,
+      "waypoint_altitude_m": 36
+    }
+  ],
+  "development_failures": [
+    {
+      "model": "gpt-oss:120b",
+      "rounds": 8,
+      "reason": "Nested geofence arguments repeatedly invalid; round limit discarded staged edits"
+    },
+    {
+      "model": "gpt-oss:120b",
+      "rounds": 6,
+      "repetitions": 2,
+      "reason": "Provider HTTP 500 after five successful tools; staged edits discarded"
+    },
+    {
+      "model": "qwen3.5:397b",
+      "rounds": 12,
+      "reason": "Optional object/null schema led to a string-encoded watch rule; staged edits discarded"
+    },
+    {
+      "model": "local stub",
+      "reason": "Initial harness run against the two-session 8080 server timed out waiting for its third vehicle; preferences restored automatically. Added explicit URL targeting and oldest-due global scheduling."
+    }
+  ],
+  "compatibility_fixes": "Inline schemas, explicit optional-property types (omit when absent), flat polygon arrays; stop after three identical tool errors",
+  "provider_requests_in_development": 43,
+  "provider_requests_note": "40 native-loop requests (successful and failed turns), two isolated compatibility probes, one watch assessment. Failed-call token usage is not available.",
+  "fence_uploads": [
+    {
+      "profile": "plane",
+      "vehicle_id": "ef9103c60dcf",
+      "inclusion_mode": "union",
+      "items": 8,
+      "status": "verified",
+      "options_before": 1,
+      "options_after": 3,
+      "other_bits_preserved": true,
+      "armed": false
+    },
+    {
+      "profile": "plane",
+      "vehicle_id": "ef9103c60dcf",
+      "inclusion_mode": "intersection",
+      "items": 8,
+      "status": "verified",
+      "options_before": 3,
+      "options_after": 1,
+      "other_bits_preserved": true,
+      "armed": false
+    },
+    {
+      "profile": "rover",
+      "vehicle_id": "b6b12548190a",
+      "inclusion_mode": "union",
+      "items": 8,
+      "status": "verified",
+      "options_before": 0,
+      "options_after": 2,
+      "other_bits_preserved": true,
+      "armed": false
+    },
+    {
+      "profile": "rover",
+      "vehicle_id": "b6b12548190a",
+      "inclusion_mode": "intersection",
+      "items": 8,
+      "status": "verified",
+      "options_before": 2,
+      "options_after": 0,
+      "other_bits_preserved": true,
+      "armed": false
+    },
+    {
+      "profile": "copter",
+      "vehicle_id": "760058db184f",
+      "inclusion_mode": "intersection",
+      "items": 8,
+      "status": "verified",
+      "options_before": 0.0,
+      "options_after": 0.0,
+      "armed": false,
+      "source": "Accepted actual model proposal; manual draw/undo preserved it"
+    }
+  ],
+  "fence_clear": {
+    "profile": "copter",
+    "status": "verified",
+    "items": 0,
+    "fence_type": 3.0,
+    "circle_ceiling_preserved": true
+  },
+  "watch_event": {
+    "vehicle_id": "760058db184f",
+    "periodic_effective": false,
+    "model": "gpt-oss:120b",
+    "assessment": {
+      "status": "nominal",
+      "summary": "The copter is disarmed, stationary on the ground (landed_state=1), with healthy sensor readings: GPS fix 6, 10 satellites, low vibration, full battery voltage 12.6\u202fV, zero throttle, and no navigation errors. EKF innovation ratios are well within limits and no motion or control activity is detected.",
+      "incidents": [
+        {
+          "severity": "info",
+          "summary": "Vehicle is disarmed and on the ground; all navigation and control outputs are zero.",
+          "evidence": [
+            "760058db184f:0:65952",
+            "760058db184f:0:65951",
+            "760058db184f:0:65955",
+            "760058db184f:0:65956",
+            "760058db184f:0:65957",
+            "760058db184f:0:65958",
+            "760058db184f:0:65961",
+            "760058db184f:0:65962"
+          ],
+          "recommendation": "No action required; keep the vehicle powered on the ground until ready to arm."
+        },
+        {
+          "severity": "info",
+          "summary": "All sensor health flags indicate normal operation; vibration levels are low and no clipping detected.",
+          "evidence": [
+            "760058db184f:0:65974",
+            "760058db184f:0:65976",
+            "760058db184f:0:65977"
+          ],
+          "recommendation": "Continue monitoring; sensor health remains nominal."
+        },
+        {
+          "severity": "info",
+          "summary": "Battery voltage is nominal (12.6\u202fV) with zero current draw and 100\u202f% remaining.",
+          "evidence": [
+            "760058db184f:0:65958"
+          ],
+          "recommendation": "Battery is fully charged; no charging or power concerns."
+        },
+        {
+          "severity": "info",
+          "summary": "Watch rule \"Ground telemetry test\" triggered (battery voltage >\u202f1\u202fV) as a test configuration.",
+          "evidence": [
+            "760058db184f:0:65958"
+          ],
+          "recommendation": "This trigger is intentional for testing; no operational issue."
+        }
+      ],
+      "model": "gpt-oss:120b",
+      "latency_s": 4.37,
+      "usage": {
+        "prompt_tokens": 26057,
+        "prompt_tokens_details": {
+          "cached_tokens": 48
+        },
+        "completion_tokens": 928,
+        "total_tokens": 26985
+      },
+      "filesystem_isolated": true,
+      "settings_revision": 6,
+      "endpoint": "https://ollama.com/v1",
+      "prompt_sha256": "77939f38cede357aeb42dca78f2042eddf5df15e8326763c9dd430e27a37232b",
+      "repair_attempted": false,
+      "observed_at": 1789744063.770289,
+      "completed_at": 1789744068.173224,
+      "observation_schema": "observations.si.v2",
+      "validation_outputs": [],
+      "track": "operational",
+      "trigger": "watch_rule"
+    },
+    "wall_latency_s": 7.1,
+    "second_rule_latched": true,
+    "second_ai_status": "Queued for AI",
+    "automatic_reservation_unchanged_after_second_trigger": true,
+    "armed": false
+  },
+  "browser_checks": [
+    "compact name/connection/model pill",
+    "typed inclusion preview and acceptance",
+    "manual inclusion drawing and blocked home/route checks",
+    "Undo restored accepted boundary without adding mission waypoints",
+    "visible tool trace",
+    "watch trigger red with periodic off",
+    "Settings hard cap and native agent prompt",
+    "fresh actual screenshots"
+  ],
+  "limits": [
+    "All new native tests remained disarmed",
+    "No new fault-detection accuracy, breach recovery or physical-flight validation",
+    "New native vision-tool turn not exercised; text-coordinate proposals were used",
+    "Long GPT-OSS turn failed before schema simplification; final verification covered its shorter four-call edit and Qwen complex turn"
+  ],
+  "local_stub_lifecycle": {
+    "local_provider_selected": true,
+    "assessment_model_verified": true,
+    "settings_locked_during_trial": true,
+    "gps_injection_observed": true,
+    "cancel_restored_parameter": true,
+    "pause_stopped_calls": true,
+    "stub_requests": 4,
+    "cloud_calls": 0,
+    "not_an_accuracy_test": true
+  },
+  "shared_scheduler": {
+    "profiles_assessed": [
+      "copter",
+      "plane",
+      "rover"
+    ],
+    "stub_requests": 3,
+    "start_intervals_s": [
+      10.015,
+      10.052
+    ],
+    "cloud_calls": 0,
+    "all_disarmed": true,
+    "not_an_accuracy_test": true
+  }
+}

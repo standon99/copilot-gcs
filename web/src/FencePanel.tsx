@@ -46,23 +46,24 @@ export function FencePanel({
         </button>
       </div>
       <p>
-        Draw red exclusion areas on the map, then upload them here. Fences are
-        separate from mission upload. Route crossings block mission upload;
-        onboard breaches use the chosen action, without automatic route
-        planning.
+        Draw blue inclusion or red exclusion areas on the map, then upload them
+        here. Fences are separate from mission upload. Route crossings block
+        mission upload; onboard breaches use the chosen action, without
+        automatic route planning.
       </p>
       <div className="polygon-upload">
         <strong>
-          {draft?.intent?.exclusions?.length || 0} draft exclusion areas ·{" "}
-          {(draft?.intent?.exclusions || []).reduce(
-            (n: number, ring: any[]) => n + ring.length,
-            0,
-          )}
+          {draft?.intent?.inclusions?.length || 0} inclusion ·{" "}
+          {draft?.intent?.exclusions?.length || 0} exclusion areas ·{" "}
+          {[
+            ...(draft?.intent?.exclusions || []),
+            ...(draft?.intent?.inclusions || []),
+          ].reduce((n: number, ring: any[]) => n + ring.length, 0)}
           /70 onboard vertices
         </strong>
         <p>
           {loaded?.bank
-            ? `${loaded.bank.polygons.length} onboard areas read at ${new Date(loaded.bank.loaded_at * 1000).toLocaleTimeString()}. ${loaded.polygon && loaded.enabled ? "Polygon fence enabled." : "Polygon fence not enabled."}`
+            ? `${loaded.bank.inclusions?.length || 0} inclusion / ${loaded.bank.polygons.length} exclusion onboard areas read at ${new Date(loaded.bank.loaded_at * 1000).toLocaleTimeString()}. ${loaded.polygon && loaded.enabled ? "Polygon fence enabled." : "Polygon fence not enabled."}`
             : "Read the onboard areas before replacing them."}
         </p>
         {loaded?.bank?.error && <p className="error">{loaded.bank.error}</p>}
@@ -110,7 +111,7 @@ export function FencePanel({
                 );
                 load(result);
                 setMessage(
-                  "Exclusion areas uploaded and independently read back. Fence enable state verified.",
+                  "Geofence areas uploaded and independently read back. Fence enable state verified.",
                 );
                 onChanged();
               } catch (e: any) {
@@ -123,16 +124,18 @@ export function FencePanel({
           >
             {busy
               ? "Working…"
-              : draft?.intent?.exclusions?.length
+              : draft?.intent?.exclusions?.length ||
+                  draft?.intent?.inclusions?.length
                 ? "Upload & enable areas"
                 : "Clear onboard areas"}
           </button>
         </div>
         <p>
-          This replaces the onboard exclusion bank with these draft areas,
-          preserving circle/altitude settings. Reducing or clearing areas takes
-          effect only when uploaded. Unsupported onboard fence types are
-          protected from replacement.
+          This replaces the onboard polygon bank with these draft areas,
+          preserving circle/altitude settings. Inclusion areas use the draft’s
+          overlap/union choice. Reducing or clearing areas takes effect only
+          when uploaded. Unsupported onboard fence types are protected from
+          replacement.
         </p>
       </div>
       {error && (

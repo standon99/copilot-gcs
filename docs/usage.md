@@ -5,7 +5,8 @@
 ## Workspace
 
 Choose a profile/count and **Start simulation**, or **Connect telemetry**.
-Wait for the selected vehicle's home and position. An optional start-page brief
+The compact pill shows the project name, gateway connection symbol and selected
+model; click the model to open Settings. Wait for the selected vehicle's home and position. An optional start-page brief
 carries into Chat; launching a simulator makes no AI request.
 
 **Flight** is one workspace. Instruments and contextual flight controls stay on
@@ -50,7 +51,11 @@ Use **AI planning** in the main bar, check the target vehicles, and write in the
 
 > For copter ab12cd, add a waypoint at -35.3623, 149.16523 at 30 m above home, followed by unlimited loiter. Stage LOG_DISARMED=1 for that copter. Leave the other copter unchanged.
 
-Requested waypoint changes revise local drafts, with before/after inspection and undo. The application validates the complete multi-target response before changing drafts. An unselected target, reboot or conflicting draft revision rejects the response.
+Requested waypoint changes revise local drafts, with before/after inspection and undo. The model can read, edit, check the results and continue in one turn through the
+[documented tools](ai-interface.md). Expand **Tool actions** to inspect each call.
+The application stages the complete turn before changing drafts. An unselected
+target, reboot, concurrent edit, failed request or exhausted/cancelled turn
+rejects staged changes. **Cancel turn** is available while it works.
 
 Parameter requests create cards containing vehicle, exact parameter, old/new values and reason. **Enable vehicle controls → Apply to [ID]** writes to a disarmed owned simulator and verifies readback. Proposals expire after five minutes and are invalid after reboot or conflicting changes. A failed batch stops; earlier verified writes remain applied and are recorded in its results.
 
@@ -74,13 +79,18 @@ In **AI planning**, describe watches in the same message as a mission, or open
 > height above ground is below 10 m while armed, including takeoff and landing.
 > Alert and advise only; I choose vehicle actions.
 
-The AI proposes **disabled** rules in the visible Watch rules pane. Inspect the
-measurement, units, threshold, phase, dwell time, reset margin and cooldown; edit
-if needed, then click **Enable rule**. You can also **Add a rule** without any
-inference. **Operator concerns** are editable context for operational assessments,
-not a confirmed diagnosis or an executable check. Unsupported conditions need a
-supported numerical rule; arbitrary Python, JavaScript and vehicle actions cannot
-be included. The current rules compare one measurement against one threshold.
+The model can create and enable a rule you request. Inspect its measurement,
+units, threshold, phase, dwell, reset margin, cooldown and **AI prompt on trigger**
+in Watch rules. Disable or edit it there. Manual **Add a rule** starts disabled;
+manual editing requires re-enabling. Turn off **Request AI advice** on a rule for
+local alerts alone. **Operator concerns** are assessment context, not a confirmed
+diagnosis. Rules cannot contain arbitrary Python, JavaScript or vehicle actions.
+
+Supported metrics include absolute yaw rate and altitude change over a 1–60 s
+window. For example: “Enable a watch if altitude above home increases by more
+than 5 m in 10 seconds while armed; ask AI to compare climb and attitude data.”
+Missing history becomes unavailable. Actual yaw rate is not commanded-response
+error; tracking that error needs a separate supported measurement.
 
 Each card shows its live value and state. Breaches turn red locally, before the
 model replies, and stay highlighted until acknowledged. Acknowledgement does not
@@ -89,14 +99,18 @@ phase. “Inactive” means outside the configured phase. **While armed** includ
 the ground, takeoff and landing; **Airborne** requires fresh reported flight phase
 and includes takeoff/landing. These distinctions matter for a 10 m minimum.
 
-A first trigger bypasses the scheduled AI interval. In **Settings**, enable
-automatic assessments and **Request AI advice when a watch rule triggers**, then
-choose the minimum time between event assessments (default 60 seconds). Further
-triggers are combined while a request is running or the limit applies. The pane
-shows queued, assessing, unavailable, paused or advice-available status. Global
-and per-vehicle pause suppress automatic calls; numerical checks keep running.
-A sustained breach produces one event until it clears beyond the reset margin
-and recurs after its cooldown. AI remains advisory and can be delayed or wrong.
+A trigger can request AI advice with **periodic monitoring off**. Enable
+**Settings → Request AI advice when a watch rule triggers**, the vehicle's watch
+advice switch, and the rule's own Request AI advice option. The per-rule prompt
+and exact trigger evidence accompany the assessment. The model can configure
+these per-vehicle options from your request, but cannot change Settings limits.
+
+Triggers bypass the periodic schedule, while respecting the shared automatic
+API spacing and per-vehicle watch spacing. Pending events are combined. Cards
+show queued, assessing, unavailable, paused or advice-available states. Disabling
+watch advice suppresses those calls and drops queued events; local checks keep
+running. A sustained breach triggers once until it clears beyond the reset margin
+and recurs after cooldown. AI remains advisory and can be delayed or wrong.
 
 Height above ground uses a fresh valid downward range reading with attitude
 correction, or fresh local terrain elevation subtracted from reported AMSL.
@@ -117,25 +131,30 @@ restart; saved model/prompt/frequency preferences do persist.
 
 ### Geofence
 
-In **Plan mission**, choose **Draw exclusion area**, click at least three corners,
+In **Plan mission**, choose **Draw inclusion area** or **Draw exclusion area**, click at least three corners,
 then **Finish area**. Drag a numbered vertex while drawing/editing, undo the last
 vertex, or cancel with Escape. **Manage areas → Edit area** reopens a boundary; the trash button
 removes it from the draft. Self-crossing/degenerate areas are rejected. Undo,
 export and import include the areas. Draft changes are separate from onboard fences.
 
-Red boundaries are draft areas, purple is an AI proposal, amber is the last
-downloaded/uploaded onboard snapshot. Numerical checks block waypoints and
-straight route legs crossing exclusions, including home departure and RTL.
+Blue boundaries are draft inclusions, red boundaries are exclusions, purple is
+an AI proposal, and amber is the last-read onboard snapshot. In **Mission intent
+& operating constraints**, choose whether multiple inclusions require their
+common overlap (**intersection**, default) or their combined area (**union**).
+Numerical checks require home, waypoints and straight route legs to stay inside
+the chosen inclusion region and outside exclusions, including departure and RTL.
+Boundary contact and routes crossing a gap between union areas are blocked.
 They do not model curved turns, loiter footprints or obstacle-avoidance paths.
 
 To enforce areas onboard, enable vehicle controls while disarmed, open
 **Onboard geofence**, **Read onboard areas**, select a breach action, then
-**Upload & enable areas**. This replaces the exclusion bank after a fresh conflict
+**Upload & enable areas**. This replaces the mixed inclusion/exclusion bank after a fresh conflict
 check, transfers MAVLink2 fence items and independently downloads them for
 comparison. It enables the polygon type last and preserves circle/ceiling types.
-At most 70 total vertices are supported. Home/current position cannot lie inside
-a newly uploaded area. Unsupported existing inclusion/circle/return-point bank
-items block replacement rather than being silently erased.
+At most 70 total vertices are supported. Home/current position must be inside the inclusion region and outside exclusions.
+Upload verifies the inclusion-combination setting while preserving unrelated
+FENCE_OPTIONS bits. Unsupported circular/return-point bank items block replacement
+rather than being silently erased.
 Empty the draft areas and choose **Clear onboard areas** to remove that bank.
 
 The separate circle/ceiling editor preserves polygon/minimum-altitude selections.
@@ -165,25 +184,41 @@ During supported navigation modes, a gold stick/target ring uses fresh autopilot
 
 ## Inference settings and usage
 
-Settings are available without a vehicle and persist in ignored `runtime/copilot/settings.json`. They survive backend restarts and application rebuilds. The four prompts are **continuous assessment**, **mission planning/review**, **mission-statement interpretation**, and **multi-vehicle interaction**. The interaction editor also shows the fixed watch-proposal contract appended by the application. Restore buttons put factory text in the editor; **Save settings** applies it. Preserve the response JSON contracts.
+Settings persist in ignored `runtime/copilot/settings.json` across restarts and
+rebuilds. Use **Chat tools and planning** for the new native tool loop,
+**Continuous assessment** for automatic advice, and **Mission-statement
+interpretation** for intent parsing. Earlier JSON planner/interaction prompts
+remain saved under legacy labels; they no longer drive native Chat. Restore puts
+factory text in the editor; **Save settings** applies it. The fixed tool contract
+and backend validators remain enforced independently of prompt edits.
 
 | Setting | Behavior |
 | --- | --- |
-| Automatic assessments | Global enable/pause, plus per-vehicle monitoring control |
-| Watch-triggered assessments | Enable/disable extra calls and set a 10–3,600 second minimum spacing; default 60 seconds; both automatic pause controls apply |
-| Assessment interval | 10 seconds to 24 hours, measured after each assessment completes; longer intervals reduce request frequency |
-| Timeout | 10–120 seconds; 45-second initial default |
-| Model | Editable model ID or provider model discovery |
-| Endpoint | OpenAI-compatible API base URL; include `/v1` for Ollama, not `/chat/completions` |
-| Prompts | Persisted custom system text, with application validators enforced independently |
+| Allow periodic AI assessments | Global permission plus per-vehicle enable, focus and cadence |
+| Request AI advice when a watch rule triggers | Independent global permission and per-vehicle switch; does not require periodic monitoring |
+| Minimum seconds between automatic API requests | Hard installation-wide cap, 10 seconds to 24 hours; default 60 s, at most about 60 automatic requests/hour across all vehicles |
+| Default assessment interval | 10 seconds to 24 hours after completion; clamped to the hard spacing |
+| Watch spacing | Additional 10–3,600 second per-vehicle event spacing; default 60 s |
+| Maximum model calls per chat turn | 2–16; default 12; exhausted turns discard staged changes |
+| Output tokens per chat call | 512–4,096; default 2,500 |
+| Timeout | 10–120 seconds per request; default 45 s |
+| Model / endpoint | Editable model ID or discovery; tool-capable OpenAI-compatible API; Ollama base URLs end in `/v1` |
+| Prompts | Saved custom text with application constraints shown below the editor |
 
-At a five-minute interval, each monitored vehicle has a nominal ceiling of about 12 scheduled assessments per hour, excluding request duration. Each assessment can make one bounded repair request; watch-triggered assessments, chat and manual connection tests add calls. More simultaneous vehicles mean more requests. Global pause stops subsequent automatic calls but numerical checks continue.
+The hard automatic cap counts periodic calls, event calls and attempted format
+repairs, including failed/cancelled calls. Its last reservation persists across
+restart. Event evidence waits in a queue while the cap applies; local alerts do
+not wait. A blocked repair reports an unavailable assessment rather than bypassing
+the cap. Operator chat and connection tests are separate from automatic usage;
+chat can make several requests within its configured turn/output bounds. These
+are request limits, not a currency or total input-token budget. Disable both
+automatic switches to stop future automatic inference completely.
 
 The cloud credential is sent only to the original configured HTTPS provider origin, never to a local or alternate endpoint. Local endpoints receive no cloud key. Alternate providers that require a different key need separate credential support; there is currently no arbitrary provider-secret editor. During active blinded trials, inference settings are locked to keep the experimental configuration stable.
 
 ## SITL failure experiments
 
-Open **Diagnostics**, select an owned simulator, enable vehicle controls, choose a scenario, observation duration, seed and evidence track, then run. Enable automatic assessments first and choose an interval shorter than the observation window. The lab warns about an interval that is too long and does not silently increase request frequency.
+Open **Diagnostics**, select an owned simulator, enable vehicle controls, choose a scenario, observation duration, seed and evidence track, then run. Enable automatic assessments first and choose an effective interval (including the hard automatic spacing) shorter than the observation window. The lab warns about an interval that is too long and does not silently increase request frequency.
 
 | Scenarios | Vehicle profiles |
 | --- | --- |

@@ -40,15 +40,33 @@ def main():
                     "messages": request["messages"],
                     "stream": False,
                     "temperature": 0.2,
-                    "max_tokens": 3500,
+                    "max_tokens": request.get("max_tokens", 3500),
+                    **(
+                        {"tools": request["tools"], "tool_choice": "auto"}
+                        if request.get("tools")
+                        else {}
+                    ),
                 },
             )
             if r.status_code != 200:
                 print(json.dumps({"error": f"Provider HTTP {r.status_code}"}))
                 return
             data = r.json()
-            content = data["choices"][0]["message"].get("content") or ""
-            print(json.dumps({"content": content, "usage": data.get("usage", {})}))
+            raw = data["choices"][0]["message"]
+            message = {"role": "assistant", "content": raw.get("content") or ""}
+            if raw.get("tool_calls"):
+                message["tool_calls"] = raw["tool_calls"]
+            # Private reasoning fields are neither logged nor returned to the UI.
+            print(
+                json.dumps(
+                    {
+                        "content": message["content"],
+                        "message": message,
+                        "finish_reason": data["choices"][0].get("finish_reason"),
+                        "usage": data.get("usage", {}),
+                    }
+                )
+            )
     except Exception as exc:
         # Never reflect headers, response bodies, request payloads or keys.
         print(json.dumps({"error": type(exc).__name__ + ": inference request failed"}))

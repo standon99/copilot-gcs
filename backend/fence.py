@@ -1,4 +1,4 @@
-"""Fence configuration and exclusion bank conversion, with explicit readback."""
+"""Fence configuration and typed polygon bank conversion, with explicit readback."""
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +14,7 @@ NAMES = (
     "FENCE_ALT_MAX",
     "FENCE_ALT_MAX_TP",
     "FENCE_AUTOENABLE",
+    "FENCE_OPTIONS",
 )
 
 
@@ -36,28 +37,27 @@ class FenceUpload(BaseModel):
     action: int
 
 
-def polygon_items(polygons):
-    polygons = validate_polygons(polygons)
-    if sum(map(len, polygons)) > 70:
-        raise ValueError("Onboard exclusion upload supports at most 70 vertices in total")
-    items = []
-    for ring in polygons:
-        for lon, lat in ring:
-            items.append(
-                {
-                    "command": 5002,
-                    "frame": 0,
-                    "lat": lat,
-                    "lon": lon,
-                    "alt": 0,
-                    "p1": len(ring),
-                    "p2": 0,
-                    "p3": 0,
-                    "p4": 0,
-                }
-            )
-    # MAVLink coordinates quantize to 1e-7 degrees; validate the actual transmitted shape.
-    decode_polygons(
+def polygon_items(polygons, inclusions=None):
+    groups = [(5001, validate_polygons(inclusions or [])), (5002, validate_polygons(polygons))]
+    if sum(len(r) for _, rings in groups for r in rings) > 70:
+        raise ValueError("Onboard polygon upload supports at most 70 vertices in total")
+    items = [
+        {
+            "command": command,
+            "frame": 0,
+            "lat": lat,
+            "lon": lon,
+            "alt": 0,
+            "p1": len(ring),
+            "p2": 0,
+            "p3": 0,
+            "p4": 0,
+        }
+        for command, rings in groups
+        for ring in rings
+        for lon, lat in ring
+    ]
+    decode_fences(
         [
             {**w, "lat": round(w["lat"] * 1e7) / 1e7, "lon": round(w["lon"] * 1e7) / 1e7}
             for w in items
@@ -66,22 +66,34 @@ def polygon_items(polygons):
     return items
 
 
-def decode_polygons(items):
-    rings = []
+def decode_fences(items):
+    rings = {"inclusions": [], "exclusions": []}
     cursor = 0
     while cursor < len(items):
         w = items[cursor]
         count = int(w["p1"])
-        if w["command"] != 5002 or count != w["p1"] or count < 3:
+        if w["command"] not in (5001, 5002) or count != w["p1"] or count < 3:
             raise ValueError(
                 "This fence bank contains unsupported types; it will not be overwritten"
             )
         group = items[cursor : cursor + count]
-        if len(group) != count or any(p["command"] != 5002 or p["p1"] != count for p in group):
-            raise ValueError("Incomplete exclusion polygon in onboard readback")
-        rings.append([(p["lon"], p["lat"]) for p in group])
+        if len(group) != count or any(
+            p["command"] != w["command"] or p["p1"] != count for p in group
+        ):
+            raise ValueError("Incomplete polygon in onboard readback")
+        rings["inclusions" if w["command"] == 5001 else "exclusions"].append(
+            [(p["lon"], p["lat"]) for p in group]
+        )
         cursor += count
-    return validate_polygons(rings)
+    return {kind: validate_polygons(polygons) for kind, polygons in rings.items()}
+
+
+def decode_polygons(items):
+    # Compatibility for callers of the earlier exclusion-only helper.
+    result = decode_fences(items)
+    if result["inclusions"]:
+        raise ValueError("Use decode_fences for an inclusion bank")
+    return result["exclusions"]
 
 
 def fence_changes(profile, params, edit):
@@ -122,6 +134,7 @@ def fence_snapshot(params):
         "enabled": bool(values.get("FENCE_ENABLE", 0)),
         "circle": bool(int(values.get("FENCE_TYPE", 0)) & 2),
         "polygon": bool(int(values.get("FENCE_TYPE", 0)) & 4),
+        "inclusion_mode": "union" if int(values.get("FENCE_OPTIONS", 0)) & 2 else "intersection",
         "radius": values.get("FENCE_RADIUS"),
         "max_alt": values.get("FENCE_ALT_MAX") if int(values.get("FENCE_TYPE", 0)) & 1 else None,
         "altitude_frame": values.get("FENCE_ALT_MAX_TP"),

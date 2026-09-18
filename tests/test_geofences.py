@@ -67,7 +67,7 @@ def test_multiple_polygon_bank_roundtrip_and_limit():
     with pytest.raises(ValueError, match="70"):
         polygon_items([RING] * 18)
     with pytest.raises(ValueError, match="unsupported"):
-        decode_polygons([{**items[0], "command": 5001}])
+        decode_polygons([{**items[0], "command": 5003}])
     with pytest.raises(ValueError, match="Incomplete"):
         decode_polygons(items[:-1])
 
@@ -139,7 +139,14 @@ def test_ai_proposals_do_not_mutate_or_remove_existing_intent():
 
 async def test_accept_proposal_requires_matching_revision_and_epoch(monkeypatch):
     v = fake_vehicle()
-    v.exclusion_proposal = {"id": "p", "base_revision": 0, "epoch": 1, "polygons": [RING]}
+    v.geofence_proposal = {
+        "id": "p",
+        "base_revision": 0,
+        "epoch": 1,
+        "exclusions": [RING],
+        "inclusions": [],
+        "inclusion_mode": "intersection",
+    }
     monkeypatch.setattr(main, "vehicles", {"v": v})
     monkeypatch.setattr(main, "event", Mock())
     save = Mock(side_effect=lambda v, d: setattr(v, "draft", d))
@@ -148,13 +155,13 @@ async def test_accept_proposal_requires_matching_revision_and_epoch(monkeypatch)
     with pytest.raises(HTTPException):
         await main.accept_exclusions("v", "accept", {"proposal_id": "p"})
     v.draft["revision"] = 0
-    v.exclusion_proposal["epoch"] = 0
+    v.geofence_proposal["epoch"] = 0
     with pytest.raises(HTTPException):
         await main.accept_exclusions("v", "accept", {"proposal_id": "p"})
     save.assert_not_called()
-    v.exclusion_proposal["epoch"] = 1
+    v.geofence_proposal["epoch"] = 1
     await main.accept_exclusions("v", "accept", {"proposal_id": "p"})
-    assert v.draft["intent"]["exclusions"] == [RING] and v.exclusion_proposal is None
+    assert v.draft["intent"]["exclusions"] == [RING] and v.geofence_proposal is None
 
 
 def test_fence_protocol_type_isolation_and_first_vertex_readback():
@@ -230,7 +237,7 @@ def test_fence_failed_readback_leaves_disabled_with_partial_journal():
 
 def test_contract_schema_tracks_live_response_and_has_no_vehicle_write_tool():
     manifest = capabilities()
-    fields = manifest["response_schema"]["$defs"]["VehicleEdits"]["properties"]
-    assert "exclusion_proposal" in fields and "watch_rules" in fields
+    names = {t["function"]["name"] for t in manifest["tools"]}
+    assert {"propose_geofence", "manage_watch", "update_waypoint"} <= names
     assert "upload mission" in manifest["operator_only"]
-    assert not any(op["name"] in ("arm", "upload", "shell") for op in manifest["operations"])
+    assert not names & {"arm", "upload", "shell"}

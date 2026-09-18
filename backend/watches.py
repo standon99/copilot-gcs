@@ -10,6 +10,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .planning import distance
 
 METRICS = {
+    "yaw_rate_abs_deg_s": {
+        "label": "Absolute yaw rate",
+        "unit": "°/s",
+        "source": "ATTITUDE.yawspeed; actual rotation, not commanded response error",
+    },
+    "relative_alt_change_m": {
+        "label": "Altitude change over window",
+        "unit": "m",
+        "source": "Change in GLOBAL_POSITION_INT.relative_alt over window_s; positive is climb",
+    },
     "agl_m": {
         "label": "Height above ground",
         "unit": "m",
@@ -68,6 +78,9 @@ class WatchRule(BaseModel):
     cooldown_s: int = Field(default=60, ge=10, le=3600)
     severity: Literal["warning", "critical"] = "warning"
     reason: str = Field(default="", max_length=1000)
+    window_s: int = Field(default=10, ge=1, le=60)
+    request_ai: bool = True
+    ai_prompt: str = Field(default="", max_length=1000)
 
     @field_validator("metric")
     @classmethod
@@ -80,14 +93,14 @@ class WatchRule(BaseModel):
 WATCH_CONTRACT = """Additional response contract: each selected vehicle may include watch_rules (array of the supplied watch_rule_schema) and watch_notes (string). These are local advisory monitoring only, NEVER executable scripts or flight actions. Rules are proposed DISABLED and the operator must Enable them in Watch rules. Only propose requested watches; no implicit rules when just planning a route. When the operator gives a concern, include watch_notes with that concern and retain previous concerns unless asked to remove them. For mission waypoints described as home, use the supplied actual home latitude and longitude, never zero placeholders; if home is missing, ask the operator to wait. Notes describe the operator's concern as an unverified hypothesis, not a diagnosis. Use only supplied watch_metrics. Ask for missing numerical thresholds/phase rather than inventing them. 'At any point while armed' includes ground, takeoff and landing; airborne requires fresh reported flight phase and includes takeoff/landing. Never substitute relative_alt_m for agl_m. Missing AGL is unknown, not safe. Vibration/attitude may indicate propulsion symptoms but cannot confirm a damaged propeller. No arbitrary code, automatic actions, parameter changes or mission edits to implement watches. The existing schema for mission operations and parameter proposals still applies."""
 
 
-def reading(telemetry, metric, now):
+def reading(telemetry, metric, now, window_s=10):
     try:
-        return _reading(telemetry, metric, now)
+        return _reading(telemetry, metric, now, window_s)
     except (TypeError, KeyError, ValueError, OverflowError):
         return None
 
 
-def _reading(telemetry, metric, now):
+def _reading(telemetry, metric, now, window_s):
     """Return SI value and exact supporting records, or explicit missing coverage."""
 
     def fresh(typ):
@@ -141,7 +154,35 @@ def _reading(telemetry, metric, now):
                     "AMSL minus local terrain estimate (not obstacle clearance)",
                 )
         return None
+    if metric == "relative_alt_change_m":
+        latest = fresh("GLOBAL_POSITION_INT")
+        if not latest or not s.get("position_valid"):
+            return None
+        target = latest["ts"] - window_s
+        old = [
+            e
+            for e in telemetry.history
+            if e["type"] == "GLOBAL_POSITION_INT"
+            and e["epoch"] == telemetry.epoch
+            and target - 1 <= e["ts"] <= target
+        ]
+        if not old:
+            return None
+        baseline = old[-1]
+        records = [
+            e
+            for e in telemetry.history
+            if e["type"] == "GLOBAL_POSITION_INT" and baseline["ts"] <= e["ts"] <= latest["ts"]
+        ]
+        if any(b["ts"] - a["ts"] > 3 for a, b in zip(records, records[1:])):
+            return None
+        return result(
+            (latest["data"]["relative_alt"] - baseline["data"]["relative_alt"]) / 1000,
+            [baseline, latest],
+            f"Relative altitude change over {latest['ts'] - baseline['ts']:.1f} s",
+        )
     mapping = {
+        "yaw_rate_abs_deg_s": ("ATTITUDE", "yawspeed", 180 / math.pi),
         "relative_alt_m": ("GLOBAL_POSITION_INT", "relative_alt", 0.001),
         "groundspeed_m_s": ("VFR_HUD", "groundspeed", 1),
         "airspeed_m_s": ("VFR_HUD", "airspeed", 1),
@@ -172,7 +213,7 @@ def _reading(telemetry, metric, now):
     if metric == "cross_track_m" and not (s["armed"] and s["mode"] == "AUTO"):
         return None
     value *= scale
-    if metric in ("roll_abs_deg", "pitch_abs_deg", "cross_track_m"):
+    if metric in ("roll_abs_deg", "pitch_abs_deg", "cross_track_m", "yaw_rate_abs_deg_s"):
         value = abs(value)
     return result(value, [e], typ + "." + field)
 
@@ -207,6 +248,78 @@ class WatchBook:
         self.revision += 1
         return rule
 
+    def apply_configuration(self, other):
+        # Live evaluations may have occurred while the model was thinking. Preserve
+        # runtime state and queued evidence for rules whose configuration is unchanged.
+        old = {r["id"]: r for r in self.rules}
+        unchanged = {
+            r["id"]
+            for r in other.rules
+            if r["id"] in old
+            and r["spec"] == old[r["id"]]["spec"]
+            and r["enabled"] == old[r["id"]]["enabled"]
+        }
+        self.rules = [
+            old[r["id"]] if r["id"] in unchanged else copy.deepcopy(r) for r in other.rules
+        ]
+        self.pending = {k: v for k, v in self.pending.items() if k in unchanged}
+        self.notes, self.revision = other.notes, other.revision
+
+    def edit(
+        self,
+        expected,
+        operation,
+        ident=None,
+        spec=None,
+        notes=None,
+        origin="operator",
+        enabled=False,
+    ):
+        if self.revision != expected:
+            raise ValueError("Watch rules changed; read them again")
+        r = next((r for r in self.rules if r["id"] == ident), None)
+        if operation in ("add", "update"):
+            if spec is None:
+                raise ValueError("Supply a complete watch rule")
+            rule = WatchRule.model_validate(spec).model_dump()
+            if operation == "add":
+                r = self.add(rule, origin)
+            elif r:
+                r.update(
+                    spec=rule,
+                    enabled=False,
+                    active=False,
+                    since=None,
+                    state="disabled",
+                    latched=False,
+                    last_trigger=None,
+                    count=0,
+                    ai_status="Edited; enable after review",
+                )
+            else:
+                raise ValueError("Unknown watch on this vehicle")
+            if enabled:
+                r.update(enabled=True, state="waiting", origin=origin)
+        elif operation == "notes" and notes is not None:
+            self.notes = notes
+        elif operation in ("enable", "disable", "acknowledge", "remove") and r:
+            if operation == "remove":
+                self.rules.remove(r)
+            elif operation == "acknowledge":
+                r["latched"] = False
+            else:
+                r.update(
+                    enabled=operation == "enable",
+                    active=False,
+                    since=None,
+                    state="waiting" if operation == "enable" else "disabled",
+                )
+        else:
+            raise ValueError("Unknown operation or watch")
+        if operation != "acknowledge":
+            self.pending.pop(ident, None)
+        self.revision += 1
+
     def public(self):
         return {
             "revision": self.revision,
@@ -237,7 +350,7 @@ class WatchBook:
         triggers = []
         for r in self.rules:
             spec = r["spec"]
-            sample = reading(telemetry, spec["metric"], now)
+            sample = reading(telemetry, spec["metric"], now, spec.get("window_s", 10))
             r["reading"] = {k: v for k, v in sample.items() if k != "records"} if sample else None
             state = None
             if not r["enabled"]:
@@ -303,8 +416,11 @@ class WatchBook:
     def queue(self, triggers, allowed, reason):
         for t in triggers:
             r = next(r for r in self.rules if r["id"] == t["id"])
-            r["ai_status"] = "Queued for AI" if allowed else reason
-            if allowed:
+            wants_ai = t["spec"].get("request_ai", True)
+            r["ai_status"] = (
+                ("Queued for AI" if allowed else reason) if wants_ai else "Local alert only"
+            )
+            if allowed and wants_ai:
                 self.pending[t["id"]] = t
 
     def take_pending(self, now, min_interval):

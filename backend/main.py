@@ -19,23 +19,25 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .agent import run_turn
+from .agent_tools import TurnConflict, WorkspaceTurn
 from .ai_contract import CONTRACT, capabilities
 from .config import HOME, PROFILES, ROOT, RUNTIME
 from .fence import (
     FenceEdit,
     FenceUpload,
-    decode_polygons,
+    decode_fences,
     fence_changes,
     fence_snapshot,
     polygon_items,
 )
 from .gateway import gateway_main
-from .geography import MapImage
-from .interaction import parameter_context, validate_edits
+from .geography import MapImage, inclusion_region, strictly_inside
 from .lab import CATALOG, score
 from .metadata import FIRMWARE_COMMIT, metadata, validate_parameter
+from .monitoring import AutomaticRateLimited, Monitoring, effective_monitoring, monitor_config
 from .navigation import navigation_cue
-from .planning import Draft, Intent, apply_patch, check, revise
+from .planning import Draft, Intent, check, revise
 from .provider import Provider, sandbox_command
 from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
 from .store import Store
@@ -90,8 +92,11 @@ class Vehicle:
         self.review = None
         self.active = None
         self.intent_proposal = None
-        self.exclusion_proposal = None
+        self.geofence_proposal = None
         self.monitor_enabled = True
+        self.monitoring = Monitoring()
+        self.agent_run = None
+        self.agent_task = None
         self.monitor_track = "operational"
         self.assessment = None
         self.watches = WatchBook()
@@ -128,6 +133,7 @@ class Vehicle:
             "fence": {
                 **fence_snapshot(self.params),
                 "polygons": (self.fence_bank or {}).get("polygons", []),
+                "inclusions": (self.fence_bank or {}).get("inclusions", []),
                 "loaded_at": (self.fence_bank or {}).get("loaded_at"),
             },
             "navigation_cue": navigation_cue(self.telemetry, self.active),
@@ -139,7 +145,9 @@ class Vehicle:
             or time.time() - self.assessment["observed_at"] > 45,
             "monitor_status": self.monitor_status,
             "monitor_enabled": self.monitor_enabled,
-            "monitor_effective": self.monitor_enabled and settings.value.monitor_enabled,
+            "monitor_effective": effective_monitoring(self, settings.value)["periodic_effective"],
+            "monitoring": effective_monitoring(self, settings.value),
+            "agent_run": public_run(getattr(self, "agent_run", None)),
             "next_monitor_at": self.next_monitor,
             "monitor_track": self.monitor_track,
             "lease_remaining": max(0, round(self.lease_until - time.time())),
@@ -152,7 +160,9 @@ class Vehicle:
 
     async def stop(self):
         self.closed = True
-        pending = [t for t in (self.inference, self.trial_task) if t and not t.done()]
+        pending = [
+            t for t in (self.inference, self.trial_task, self.agent_task) if t and not t.done()
+        ]
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
@@ -262,8 +272,8 @@ def watch_inference_state(v):
         return "Disabled during diagnostics (keeps evaluation blind)"
     if v.monitor_track != "operational":
         return "Disabled on telemetry-only track"
-    if not settings.value.monitor_enabled or not v.monitor_enabled:
-        return "Automatic AI paused; local alerts remain active"
+    if not monitor_config(v).watch_advice_enabled:
+        return "Watch AI paused for this vehicle; local alerts remain active"
     if not settings.value.watch_inference_enabled:
         return "Event-triggered AI disabled in Settings"
     return "Enabled"
@@ -274,6 +284,7 @@ async def monitor(v, triggers=None):
     observation = v.telemetry.observations(v.active, v.monitor_track)
     if v.monitor_track == "operational" and not (v.trial_task and not v.trial_task.done()):
         add_watch_context(observation, v.watches, triggers, v.telemetry)
+        observation["monitoring_focus"] = monitor_config(v).focus
     v.monitor_status = "assessing"
     try:
         result = await provider.monitor(observation)
@@ -290,6 +301,10 @@ async def monitor(v, triggers=None):
         # Store exactly what the model saw for audit, never credentials or private truth.
         with (v.folder / "inference.jsonl").open("a") as f:
             f.write(json.dumps({"observations": observation, "prediction": result}) + "\n")
+    except AutomaticRateLimited:
+        v.watches.pending.update({t["id"]: t for t in triggers})
+        v.watches.mark(triggers, "Queued: automatic usage limit")
+        v.monitor_status = "waiting for usage limit"
     except asyncio.CancelledError:
         v.watches.mark(triggers, "Assessment cancelled")
         raise
@@ -313,8 +328,36 @@ async def monitor(v, triggers=None):
         except OSError:
             v.recording_error = "Inference audit recording failed"
     finally:
-        v.next_monitor = time.time() + settings.value.monitor_interval
+        v.next_monitor = (
+            time.time() + effective_monitoring(v, settings.value)["effective_interval_s"]
+        )
         v.inference = None
+
+
+def due_assessment(now):
+    """Choose globally after evaluating every vehicle; insertion order is not priority."""
+    if any(v.inference for v in vehicles.values()) or not provider.automatic_ready(now):
+        return None
+    available = [v for v in vehicles.values() if not v.closed]
+    queued = [
+        v
+        for v in available
+        if watch_inference_state(v) == "Enabled"
+        and v.watches.pending
+        and now - v.watches.last_inference >= settings.value.watch_min_interval
+    ]
+    if queued:
+        v = min(queued, key=lambda v: min(t["at"] for t in v.watches.pending.values()))
+        return v, v.watches.take_pending(now, settings.value.watch_min_interval)
+    periodic = [
+        v
+        for v in available
+        if v.monitor_enabled
+        and settings.value.monitor_enabled
+        and now >= v.next_monitor
+        and v.telemetry.latest
+    ]
+    return (min(periodic, key=lambda v: v.next_monitor), []) if periodic else None
 
 
 async def pump():
@@ -395,27 +438,16 @@ async def pump():
             if watch_state != "Enabled" and v.watches.pending:
                 v.watches.mark(list(v.watches.pending.values()), watch_state)
                 v.watches.pending.clear()
-            batch = (
-                v.watches.take_pending(now, settings.value.watch_min_interval)
-                if not v.inference and watch_state == "Enabled"
-                else []
-            )
-            if batch:
-                v.inference = background(monitor(v, batch))
-            elif (
-                v.monitor_enabled
-                and settings.value.monitor_enabled
-                and not v.inference
-                and time.time() >= v.next_monitor
-                and v.telemetry.latest
-            ):
-                v.inference = background(monitor(v))
             if v.recording:
                 try:
                     v.record.flush()
                 except OSError:
                     v.recording = False
                     v.recording_error = "Recording flush failed"
+        work = due_assessment(time.time())
+        if work:
+            v, batch = work
+            v.inference = background(monitor(v, batch))
         await asyncio.sleep(0.05)
 
 
@@ -473,6 +505,19 @@ async def health():
     return {"status": "ok", "vehicles": len(vehicles)}
 
 
+def public_configuration():
+    return {
+        "settings_revision": settings.value.revision,
+        "model": settings.value.model,
+        "provider": settings.value.base_url,
+        "monitor_interval": settings.value.monitor_interval,
+        "automatic_min_interval": settings.value.automatic_min_interval,
+        "monitor_enabled": settings.value.monitor_enabled,
+        "watch_inference_enabled": settings.value.watch_inference_enabled,
+        "watch_min_interval": settings.value.watch_min_interval,
+    }
+
+
 @app.get("/api/bootstrap")
 async def bootstrap(request: Request):
     sid = request.cookies.get("copilot_session")
@@ -482,16 +527,11 @@ async def bootstrap(request: Request):
     response = JSONResponse(
         {
             "profiles": PROFILES,
-            "model": settings.value.model,
-            "provider": settings.value.base_url,
+            **public_configuration(),
             "configured": bool(credential_for(settings.value.base_url))
             or settings.value.base_url != "https://ollama.com/v1",
             "filesystem_isolated": sandbox_command()[1],
             "home": HOME,
-            "monitor_interval": settings.value.monitor_interval,
-            "monitor_enabled": settings.value.monitor_enabled,
-            "watch_inference_enabled": settings.value.watch_inference_enabled,
-            "watch_min_interval": settings.value.watch_min_interval,
             "watch_metrics": METRICS,
             "capabilities": {
                 "owned_sitl_write": True,
@@ -518,7 +558,7 @@ async def read_settings():
     return {
         "preferences": settings.get(),
         "defaults": DEFAULT_PROMPTS,
-        "contracts": {"interaction": CONTRACT},
+        "contracts": {"agent": CONTRACT},
         "credential_attached": bool(credential_for(settings.value.base_url)),
     }
 
@@ -538,7 +578,9 @@ async def save_settings(body: Preferences):
         task.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
     for v in vehicles.values():
-        v.next_monitor = time.time() + settings.value.monitor_interval
+        v.next_monitor = (
+            time.time() + effective_monitoring(v, settings.value)["effective_interval_s"]
+        )
     event(
         None,
         "inference_settings_saved",
@@ -717,10 +759,12 @@ async def workspace(vid: str):
         "active": v.active,
         "chat": v.chat,
         "intent_proposal": v.intent_proposal,
-        "exclusion_proposal": v.exclusion_proposal,
+        "geofence_proposal": getattr(v, "geofence_proposal", None),
         "parameter_proposals": v.parameter_proposals,
         "watches": v.watches.public(),
         "review_current": review_current(v),
+        "agent_run": public_run(getattr(v, "agent_run", None)),
+        "monitoring": effective_monitoring(v, settings.value),
         "checks": check(v.draft, v.profile, v.telemetry.snapshot()["home"]),
     }
 
@@ -821,50 +865,10 @@ async def edit_watches(vid: str, body: WatchEdit):
     book = v.watches
     if v.trial_task and not v.trial_task.done():
         raise HTTPException(409, "Finish diagnostics before editing operator watches")
-    if book.revision != body.expected_revision:
-        raise HTTPException(409, "Watch rules changed; reload before editing")
-    r = next((r for r in book.rules if r["id"] == body.id), None)
-    if body.operation in ("add", "update"):
-        if body.rule is None:
-            raise HTTPException(422, "Supply a complete rule")
-        if body.operation == "add":
-            try:
-                book.add(body.rule.model_dump())
-            except ValueError as exc:
-                raise HTTPException(422, str(exc))
-        elif r:
-            r.update(
-                spec=body.rule.model_dump(),
-                enabled=False,
-                active=False,
-                since=None,
-                state="disabled",
-                latched=False,
-                last_trigger=None,
-                count=0,
-                ai_status="Edited; enable after review",
-            )
-        else:
-            raise HTTPException(404, "Unknown rule on this vehicle")
-    elif body.operation == "notes" and body.notes is not None:
-        book.notes = body.notes
-    elif body.operation in ("enable", "disable", "acknowledge", "remove") and r:
-        if body.operation == "remove":
-            book.rules.remove(r)
-        elif body.operation == "acknowledge":
-            r["latched"] = False
-        else:
-            r.update(
-                enabled=body.operation == "enable",
-                active=False,
-                since=None,
-                state="waiting" if body.operation == "enable" else "disabled",
-            )
-    else:
-        raise HTTPException(422, "Unknown operation or rule")
-    if body.operation != "acknowledge":
-        book.pending.pop(body.id, None)
-    book.revision += 1
+    try:
+        book.edit(body.expected_revision, body.operation, body.id, body.rule, body.notes)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
     store.put("watches:" + vid, book.public())
     event(vid, "watches_edited", {"operation": body.operation, **book.public()})
     return await workspace(vid)
@@ -968,13 +972,14 @@ async def read_fence(vid: str):
 
 def remember_fence(v, items):
     try:
-        polygons = decode_polygons(items)
+        bank = decode_fences(items)
         error = None
     except ValueError as exc:
-        polygons, error = [], str(exc)
+        bank, error = {"exclusions": [], "inclusions": []}, str(exc)
     v.fence_bank = {
         "items": items,
-        "polygons": polygons,
+        "polygons": bank["exclusions"],
+        "inclusions": bank["inclusions"],
         "error": error,
         "epoch": v.telemetry.epoch,
         "loaded_at": time.time(),
@@ -1010,7 +1015,7 @@ async def write_fence_polygons(vid: str, body: FenceUpload, request: Request):
     ):
         raise HTTPException(409, "Disarm and finish configuration/diagnostics operations first")
     if body.expected_revision != v.draft["revision"]:
-        raise HTTPException(409, "Draft changed; review the current exclusion areas")
+        raise HTTPException(409, "Draft changed; review the current geofence areas")
     if (
         not v.fence_bank
         or v.fence_bank["epoch"] != s["epoch"]
@@ -1018,17 +1023,28 @@ async def write_fence_polygons(vid: str, body: FenceUpload, request: Request):
     ):
         raise HTTPException(409, "Read the onboard areas before uploading")
     try:
-        decode_polygons(body.expected_items)
-        items = polygon_items(v.draft["intent"]["exclusions"])
+        decode_fences(body.expected_items)
+        intent = v.draft["intent"]
+        items = polygon_items(intent["exclusions"], intent.get("inclusions", []))
         if items and (not s["home"] or not s.get("position_valid")):
             raise ValueError("Wait for a valid position and reported home")
-        for ring in decode_polygons(items):
+        bank = decode_fences(items)
+        region = inclusion_region(bank["inclusions"], intent.get("inclusion_mode", "intersection"))
+        if region is not None:
+            for point in (s["home"], s["position"]):
+                if not strictly_inside(region, Point(point["lon"], point["lat"])):
+                    raise ValueError(
+                        "Home/current position must be strictly inside the inclusion areas"
+                    )
+        for ring in bank["exclusions"]:
             for point in (s["home"], s["position"]):
                 if Polygon(ring).intersects(Point(point["lon"], point["lat"])):
                     raise ValueError(
                         "An exclusion area contains home/current position; adjust it first"
                     )
         names = ["FENCE_ENABLE", "FENCE_TYPE", "FENCE_ACTION"]
+        if bank["inclusions"]:
+            names.append("FENCE_OPTIONS")
         if "FENCE_AUTOENABLE" in v.params:
             names.append("FENCE_AUTOENABLE")
         expected = {}
@@ -1051,6 +1067,11 @@ async def write_fence_polygons(vid: str, body: FenceUpload, request: Request):
                 "expected_items": body.expected_items,
                 "expected": expected,
                 "action": body.action,
+                **(
+                    {"inclusion_mode": intent.get("inclusion_mode", "intersection")}
+                    if bank["inclusions"]
+                    else {}
+                ),
             },
         )
         result = await await_job(j)
@@ -1166,6 +1187,7 @@ class Interaction(BaseModel):
     targets: list[str] = Field(min_length=1, max_length=6)
     enabled: bool = False
     map_image: MapImage | None = None
+    read_only: bool = False
 
 
 @app.get("/api/ai/capabilities")
@@ -1173,127 +1195,229 @@ async def ai_capabilities():
     return {**capabilities(), "contract": CONTRACT}
 
 
+def public_run(run):
+    if not run:
+        return None
+    return {
+        **{k: v for k, v in run.items() if k != "steps"},
+        "steps": [
+            {
+                **{k: v for k, v in step.items() if k != "result"},
+                "result": json.dumps(step.get("result", {}), ensure_ascii=False)[:4000],
+            }
+            for step in run["steps"]
+        ],
+    }
+
+
+@app.post("/api/vehicles/{vid}/agent/cancel")
+async def cancel_agent(vid: str):
+    v = vehicle(vid)
+    task = getattr(v, "agent_task", None)
+    if task and not task.done():
+        task.cancel()
+    return {"status": "cancellation requested"}
+
+
 @app.post("/api/interaction")
 async def interaction(body: Interaction):
     if not body.enabled or len(set(body.targets)) != len(body.targets):
         raise HTTPException(422, "Enable interaction mode and select unique target vehicles")
+    selected = [vehicle(vid) for vid in body.targets]
     if body.map_image and (
         body.map_image.vehicle_id not in body.targets
         or body.map_image.draft_revision != vehicle(body.map_image.vehicle_id).draft["revision"]
     ):
         raise HTTPException(409, "Map capture belongs to another draft/target; attach again")
-    snapshots = {}
-    for vid in body.targets:
-        v = vehicle(vid)
+    for v in selected:
         if v.trial_task and not v.trial_task.done():
-            raise HTTPException(409, "Finish diagnostics before AI planning or custom watch edits")
-        snapshots[vid] = {
-            "vehicle_id": vid,
-            "label": v.snapshot()["name"],
-            "profile": v.profile,
-            "epoch": v.telemetry.epoch,
-            "draft": copy.deepcopy(v.draft),
-            "checks": check(v.draft, v.profile, v.telemetry.snapshot()["home"]),
-            "parameters": parameter_context(v.profile, v.params, body.message),
-            "live_state": v.telemetry.snapshot(),
-            "supported_commands": PROFILES[v.profile]["commands"],
-            "previous_messages": copy.deepcopy(v.chat[-6:]),
-            "watches": v.watches.public(),
-        }
-    try:
-        raw, meta = await provider.complete(
-            settings.value.prompts.interaction + "\n\n" + CONTRACT,
-            {
-                "request": body.message,
-                "selected_vehicles": list(snapshots.values()),
-                "watch_metrics": METRICS,
-                "watch_rule_schema": WatchRule.model_json_schema(),
-                "gcs_capabilities": capabilities(),
-                "map_image": body.map_image.context() if body.map_image else None,
-            },
-            image=body.map_image.image if body.map_image else None,
-        )
-        reply, prepared = validate_edits(raw, snapshots, vehicles, body.map_image)
-    except Exception as exc:
-        raise HTTPException(502, "No interaction changes applied: " + str(exc)[:300])
-    changes = {}
-    for edit in prepared:
-        v = edit["vehicle"]
-        for spec in edit["watch_rules"]:
-            v.watches.add(spec, "AI proposal")
-        if edit["watch_notes"] is not None:
-            v.watches.notes = edit["watch_notes"]
-            v.watches.revision += 1
-        if edit["watch_rules"] or edit["watch_notes"] is not None:
-            store.put("watches:" + v.id, v.watches.public())
-            event(v.id, "watches_proposed", v.watches.public())
-        if edit["draft"] is not None:
-            changes[v.id] = {
-                "before": snapshots[v.id]["draft"],
-                "after": edit["draft"],
-                "operations": edit["operations"],
-            }
-            save_draft(v, edit["draft"])
-        if edit["exclusion_proposal"] is not None:
-            v.exclusion_proposal = {
-                **edit["exclusion_proposal"],
-                "id": uuid.uuid4().hex,
-                "base_revision": v.draft["revision"],
-                "epoch": v.telemetry.epoch,
-                "model": meta,
-                "map_context": body.map_image.context() if body.map_image else None,
-            }
-            event(v.id, "exclusions_proposed", v.exclusion_proposal)
-        if edit["parameters"]:
-            proposal = {
-                "id": uuid.uuid4().hex,
-                "vehicle_id": v.id,
-                "epoch": v.telemetry.epoch,
-                "created_at": time.time(),
-                "expires_at": time.time() + 300,
-                "parameters": edit["parameters"],
-                "status": "pending",
-                "results": [],
-                "model": meta,
-            }
-            v.parameter_proposals.append(proposal)
-            v.parameter_proposals = v.parameter_proposals[-30:]
-            event(v.id, "parameters_proposed", proposal)
-    for vid in body.targets:
-        v = vehicle(vid)
+            raise HTTPException(409, "Finish diagnostics before AI planning")
+        if getattr(v, "agent_task", None) and not v.agent_task.done():
+            raise HTTPException(409, "A chat turn is already running for this vehicle")
+    options = settings.get()
+    turn = WorkspaceTurn(vehicles, body.targets, settings.value, body.map_image, body.read_only)
+    run = {
+        "id": uuid.uuid4().hex,
+        "status": "running",
+        "round": 0,
+        "max_rounds": options["agent_max_rounds"],
+        "steps": [],
+        "started_at": time.time(),
+    }
+    for v in selected:
+        v.agent_run, v.agent_task = run, asyncio.current_task()
         v.chat.append(
             {"role": "user", "text": body.message, "ts": time.time(), "targets": body.targets}
         )
-        entry = {
-            "role": "assistant",
-            "text": reply,
-            "ts": time.time(),
-            "change": changes.get(vid),
-            "model": meta,
-        }
-        v.chat.append(entry)
-        event(vid, "interaction", entry)
-    return {"reply": reply, "workspaces": [await workspace(vid) for vid in body.targets]}
+
+    def guard_settings():
+        if settings.value.revision != options["revision"]:
+            raise TurnConflict("Settings changed during this turn; no turn changes applied")
+
+    context = {
+        "operator_request": body.message,
+        "read_only": body.read_only,
+        "selected_vehicles": [
+            {
+                "vehicle_id": v.id,
+                "profile": v.profile,
+                "epoch": v.telemetry.epoch,
+                "home": v.telemetry.snapshot()["home"],
+                "draft_revision": v.draft["revision"],
+                "waypoint_count": len(v.draft["waypoints"]),
+                "previous_messages": [
+                    {"role": m["role"], "text": m["text"][:3000]} for m in v.chat[-7:-1]
+                ],
+            }
+            for v in selected
+        ],
+        "map_image": body.map_image.context() if body.map_image else None,
+        "limits": {
+            "model_rounds": options["agent_max_rounds"],
+            "hard_automatic_min_interval_s": options["automatic_min_interval"],
+        },
+    }
+    committing = False
+    try:
+        # Exact public inputs plus returned tool results make the exchange auditable.
+        # Image bytes and private provider reasoning are intentionally excluded.
+        from .agent_tools import tool_schemas
+
+        for v in selected:
+            event(
+                v.id,
+                "agent_turn_started",
+                {
+                    "run_id": run["id"],
+                    "context": context,
+                    "system": options["prompts"]["agent"] + "\n\n" + CONTRACT,
+                    "tools": tool_schemas(body.read_only),
+                    "model": options["model"],
+                    "settings_revision": options["revision"],
+                },
+            )
+        reply, meta = await run_turn(
+            provider,
+            turn,
+            options["prompts"]["agent"] + "\n\n" + CONTRACT,
+            context,
+            options,
+            run,
+            guard_settings,
+        )
+        turn.guard()
+        guard_settings()
+        # No awaits between the final guards and applying the full selected-vehicle batch.
+        committing = True
+        for v in selected:
+            w, before = turn.working[v.id], turn.before[v.id]
+            change = None
+            if w["operations"]:
+                draft = revise(v.draft, w["draft"], before["draft"]["revision"])
+                change = {"before": before["draft"], "after": draft, "operations": w["operations"]}
+                save_draft(v, draft)
+            if w["watches"].revision != before["watch_revision"]:
+                v.watches.apply_configuration(w["watches"])
+                store.put("watches:" + v.id, v.watches.public())
+                event(v.id, "watches_configured_by_tools", v.watches.public())
+            if w["monitoring"].revision != before["monitor_revision"]:
+                v.monitoring = w["monitoring"]
+                v.monitor_enabled = v.monitoring.periodic_enabled
+                v.next_monitor = (
+                    time.time() + effective_monitoring(v, settings.value)["effective_interval_s"]
+                )
+                if v.inference:
+                    v.inference.cancel()
+                event(
+                    v.id, "monitoring_configured_by_tools", effective_monitoring(v, settings.value)
+                )
+            if w["fence"] is not None:
+                v.geofence_proposal = {
+                    **w["fence"],
+                    "id": uuid.uuid4().hex,
+                    "base_revision": v.draft["revision"],
+                    "epoch": v.telemetry.epoch,
+                    "model": meta,
+                    "map_context": body.map_image.context() if body.map_image else None,
+                }
+                event(v.id, "geofence_proposed", v.geofence_proposal)
+            if w["parameters"]:
+                v.parameter_proposals.append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "vehicle_id": v.id,
+                        "epoch": v.telemetry.epoch,
+                        "created_at": time.time(),
+                        "expires_at": time.time() + 300,
+                        "parameters": list(w["parameters"].values()),
+                        "status": "pending",
+                        "results": [],
+                        "model": meta,
+                    }
+                )
+                v.parameter_proposals = v.parameter_proposals[-30:]
+            run.update(status="completed", completed_at=time.time())
+            entry = {
+                "role": "assistant",
+                "text": reply,
+                "ts": time.time(),
+                "change": change,
+                "model": meta,
+                "tool_trace": public_run(run)["steps"],
+            }
+            v.chat.append(entry)
+            event(v.id, "agent_turn", {"entry": entry, "trace": run})
+        return {"reply": reply, "workspaces": [await workspace(vid) for vid in body.targets]}
+    except (Exception, asyncio.CancelledError) as exc:
+        cancelled = isinstance(exc, asyncio.CancelledError)
+        message = (
+            "Turn cancelled; no turn changes applied"
+            if cancelled
+            else "No turn changes applied: " + str(exc)[:300]
+        )
+        if committing:
+            message = (
+                "Local commit interrupted; inspect drafts, watches and proposals before retrying: "
+                + str(exc)[:200]
+            )
+        run.update(
+            status="cancelled" if cancelled else "failed", error=message, completed_at=time.time()
+        )
+        for v in selected:
+            v.chat.append(
+                {
+                    "role": "error",
+                    "text": message,
+                    "ts": time.time(),
+                    "tool_trace": public_run(run)["steps"],
+                }
+            )
+            event(v.id, "agent_turn_failed", run)
+        raise HTTPException(409 if cancelled or isinstance(exc, TurnConflict) else 502, message)
+    finally:
+        for v in selected:
+            v.agent_task = None
 
 
-@app.post("/api/vehicles/{vid}/exclusions/{operation}")
+@app.post("/api/vehicles/{vid}/geofences/{operation}")
 async def accept_exclusions(vid: str, operation: str, body: dict):
     v = vehicle(vid)
-    p = v.exclusion_proposal
+    p = v.geofence_proposal
     if not p or body.get("proposal_id") != p["id"]:
-        raise HTTPException(409, "Exclusion proposal changed; refresh")
+        raise HTTPException(409, "Geofence proposal changed; refresh")
     if v.trial_task and not v.trial_task.done():
         raise HTTPException(409, "Finish diagnostics before changing areas")
     if operation == "accept":
         if p["base_revision"] != v.draft["revision"] or p["epoch"] != v.telemetry.epoch:
-            raise HTTPException(409, "Exclusion proposal is stale; ask Copilot to propose it again")
+            raise HTTPException(409, "Geofence proposal is stale; ask Copilot to propose it again")
         d = copy.deepcopy(v.draft)
-        d["intent"]["exclusions"] = p["polygons"]
+        for key in ("exclusions", "inclusions", "inclusion_mode"):
+            d["intent"][key] = p[key]
         save_draft(v, revise(v.draft, d, p["base_revision"]))
     elif operation != "dismiss":
         raise HTTPException(422, "Use accept or dismiss")
     event(vid, "exclusions_" + operation, p)
-    v.exclusion_proposal = None
+    v.geofence_proposal = None
     return await workspace(vid)
 
 
@@ -1372,53 +1496,12 @@ class Chat(BaseModel):
 
 @app.post("/api/vehicles/{vid}/chat")
 async def chat(vid: str, body: Chat):
-    v = vehicle(vid)
-    base = copy.deepcopy(v.draft)
-    entry = {"role": "user", "text": body.message, "ts": time.time()}
-    v.chat.append(entry)
-    payload = {
-        "request": body.message,
-        "edit_authorized": body.edit_authorized,
-        "profile": v.profile,
-        "supported_commands": PROFILES[v.profile]["commands"],
-        "draft": base,
-        "checks": check(base, v.profile, v.telemetry.snapshot()["home"]),
-        "live_state": v.telemetry.snapshot(),
-        "observations": v.telemetry.observations(v.active, "operational"),
-        "previous_messages": v.chat[-10:],
-    }
-    try:
-        result, meta = await provider.complete(settings.value.prompts.planner, payload)
-        if not isinstance(result.get("reply"), str) or len(result["reply"]) > 16000:
-            raise ValueError("Invalid planner reply")
-        ops = result.get("operations", [])
-        if not isinstance(ops, list):
-            raise ValueError("Invalid planner operations")
-        if ops and not body.edit_authorized:
-            raise ValueError("Review-only response attempted a draft edit; no changes applied")
-        change = None
-        if ops:
-            d = apply_patch(v.draft, ops, base["revision"])
-            save_draft(v, d)
-            change = {"before": base, "after": d, "operations": ops}
-        entry = {
-            "role": "assistant",
-            "text": result["reply"],
-            "ts": time.time(),
-            "change": change,
-            "model": meta,
-        }
-        v.chat.append(entry)
-        event(vid, "planner", entry)
-        return await workspace(vid)
-    except Exception as exc:
-        entry = {
-            "role": "error",
-            "text": "Copilot unavailable: " + str(exc)[:300],
-            "ts": time.time(),
-        }
-        v.chat.append(entry)
-        raise HTTPException(502, entry["text"])
+    result = await interaction(
+        Interaction(
+            message=body.message, targets=[vid], enabled=True, read_only=not body.edit_authorized
+        )
+    )
+    return result["workspaces"][0]
 
 
 @app.post("/api/vehicles/{vid}/intent/interpret")
@@ -1435,6 +1518,8 @@ async def interpret_intent(vid: str):
         )
         intent = Intent.model_validate(raw["intent"]).model_dump()
         intent["brief"] = brief
+        for key in ("exclusions", "inclusions", "inclusion_mode"):
+            intent[key] = copy.deepcopy(v.draft["intent"][key])
         v.intent_proposal = {
             "id": uuid.uuid4().hex,
             "base_revision": revision,
@@ -1466,12 +1551,29 @@ async def monitoring(vid: str, body: dict):
     v = vehicle(vid)
     if v.trial_task and not v.trial_task.done():
         raise HTTPException(409, "Monitoring is locked during a trial")
-    v.monitor_enabled = bool(body.get("enabled", True))
-    v.monitor_track = "telemetry" if body.get("track") == "telemetry" else "operational"
-    if not v.monitor_enabled and v.inference:
+    previous = monitor_config(v)
+    patch = {
+        k: body[k]
+        for k in ("periodic_enabled", "watch_advice_enabled", "interval_s", "focus")
+        if k in body
+    }
+    if "enabled" in body:
+        patch["periodic_enabled"] = bool(body["enabled"])
+    try:
+        v.monitoring = Monitoring.model_validate(
+            {**previous.model_dump(), **patch, "revision": previous.revision + 1}
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    v.monitor_enabled = v.monitoring.periodic_enabled
+    v.monitor_track = (
+        "telemetry" if body.get("track", v.monitor_track) == "telemetry" else "operational"
+    )
+    if v.inference:
         v.inference.cancel()
         await asyncio.gather(v.inference, return_exceptions=True)
-    v.next_monitor = time.time() + settings.value.monitor_interval
+    v.next_monitor = time.time() + effective_monitoring(v, settings.value)["effective_interval_s"]
+    event(vid, "monitoring_configured", effective_monitoring(v, settings.value))
     return v.snapshot()
 
 
@@ -1596,12 +1698,19 @@ async def run_trial(v, body):
     import random
 
     trial = v.trial
+    previous_monitoring = monitor_config(v).model_copy(deep=True)
+    previous_track = v.monitor_track
     try:
         if v.inference:
             v.inference.cancel()
             await asyncio.gather(v.inference, return_exceptions=True)
         v.monitor_track = "telemetry" if body.track == "telemetry" else "operational"
         v.monitor_enabled = True
+        v.monitoring = Monitoring(
+            revision=previous_monitoring.revision + 1,
+            interval_s=settings.value.monitor_interval,
+            watch_advice_enabled=False,
+        )
         trial["state"] = "baseline"
         v.next_monitor = 0
         await asyncio.sleep(20 + random.Random(body.seed).uniform(0, 10))
@@ -1667,6 +1776,14 @@ async def run_trial(v, body):
                 trial["restore_required"] = True
         if trial["state"] == "restoring":
             trial["state"] = "complete"
+        v.monitoring = previous_monitoring.model_copy(
+            update={"revision": previous_monitoring.revision + 2}
+        )
+        v.monitor_enabled = v.monitoring.periodic_enabled
+        v.monitor_track = previous_track
+        v.next_monitor = (
+            time.time() + effective_monitoring(v, settings.value)["effective_interval_s"]
+        )
         event(v.id, "trial_result", trial)
 
 
@@ -1727,6 +1844,7 @@ async def websocket(ws: WebSocket):
                 {
                     "vehicles": [v.snapshot() for v in vehicles.values()],
                     "jobs": [public_job(j) for j in list(jobs.values())[-30:]],
+                    "configuration": public_configuration(),
                 }
             )
             await asyncio.sleep(0.5)

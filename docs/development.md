@@ -14,7 +14,7 @@ From the repository root, with Node 22+ on PATH:
 git diff --check
 ```
 
-The current suite contains **132 Python tests** and **11 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+The current suite contains **157 Python tests** and **11 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
 
 For an isolated runtime during development, use
 `COPILOT_RUNTIME_DIR="$PWD/runtime/test-session" COPILOT_PORT=8091 ./start.sh`.
@@ -39,8 +39,9 @@ For explicit live tests, start the app in another terminal first. These scripts 
 .venv/bin/python scripts/flight-smoke.py
 .venv/bin/python scripts/airborne-trial.py
 
-# Local response stub: settings, scheduler, injection/cancel and pause:
-.venv/bin/python scripts/settings-smoke.py
+# Local response stub: use an otherwise idle temporary server on 8091;
+# settings, shared scheduler, injection/cancel and pause (no cloud calls):
+.venv/bin/python scripts/settings-smoke.py --url http://127.0.0.1:8091
 ```
 
 Reports and private experimental artifacts go to ignored `runtime/copilot/`. Read each runner before launching it: flight tests control their owned sessions, and model benchmarks consume inference requests. The older `requirements-installed.txt` is a historical terminal/SITL environment snapshot; use `requirements.txt`, `requirements-dev.txt` and `requirements-sitl.txt` for this application.

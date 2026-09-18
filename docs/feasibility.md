@@ -14,6 +14,11 @@ The user requires multiple vehicle types from the start. This draft uses Copter,
 
 ## What is already available
 
+The inventory and cost example below are historical planning assumptions. The
+current release has a shared automatic request cap (default one per 60 seconds,
+operator-configurable with a 10-second minimum), plus separately bounded chat
+tool loops; see [usage](usage.md) and [measured validation](validation.md).
+
 This workspace contains a native Apple Silicon ArduCopter **4.7.1** build at commit `dbe792162d06cab66c3475fd5556bf7a120f119e`, a Python environment with `pymavlink 2.4.49` and `MAVProxy 1.8.74`, and launchers for TCP `127.0.0.1:5760` or MAVProxy forwarding to UDP `14550`. The existing [verification record](../verification.json) reports disarmed heartbeat, attitude, and position checks. The revision and clean source checkout were inspected during this analysis; that earlier smoke test was not rerun.
 
 There is currently no application frontend, backend, LLM integration, or failure-detection benchmark here. Only the Copter binary is built. Plane and Rover sources and autotests are present, and their version headers also say 4.7.1, but their builds and runtime behavior were not verified. Firmware sources, recorded parameters, and existing autotests provide implementation evidence; they do not establish that the proposed application or its failure scenarios work.

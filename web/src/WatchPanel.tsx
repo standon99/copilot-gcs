@@ -12,6 +12,9 @@ const emptyRule = {
   cooldown_s: 60,
   severity: "warning",
   reason: "",
+  window_s: 10,
+  request_ai: true,
+  ai_prompt: "",
 };
 const scopeNames: any = {
   always: "Always",
@@ -81,6 +84,36 @@ export function WatchPanel({
             {vehicle.watch_inference}{" "}
             <button onClick={onSettings}>Settings</button>
           </p>
+          <div className="watch-monitoring">
+            <strong>
+              Periodic monitoring:{" "}
+              {vehicle.monitoring?.periodic_effective
+                ? `every ${vehicle.monitoring.effective_interval_s}s`
+                : "off"}
+            </strong>
+            {vehicle.monitoring?.focus && <p>{vehicle.monitoring.focus}</p>}
+            <button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await api(`/vehicles/${vehicle.id}/monitor`, "POST", {
+                    watch_advice_enabled:
+                      !vehicle.monitoring?.watch_advice_enabled,
+                  });
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {vehicle.monitoring?.watch_advice_enabled
+                ? "Pause watch AI advice"
+                : "Enable watch AI advice"}
+            </button>
+          </div>
           <div className="button-row">
             <button
               onClick={() => {
@@ -179,6 +212,42 @@ export function WatchPanel({
                   />
                 </label>
               </div>
+              {form.metric === "relative_alt_change_m" && (
+                <label>
+                  Change window (seconds)
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={form.window_s}
+                    onChange={(e) =>
+                      setForm({ ...form, window_s: +e.target.value })
+                    }
+                  />
+                </label>
+              )}
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={form.request_ai ?? true}
+                  onChange={(e) =>
+                    setForm({ ...form, request_ai: e.target.checked })
+                  }
+                />
+                Request AI advice on trigger
+              </label>
+              {form.request_ai !== false && (
+                <label>
+                  Question for AI when triggered (optional)
+                  <textarea
+                    value={form.ai_prompt || ""}
+                    maxLength={1000}
+                    onChange={(e) =>
+                      setForm({ ...form, ai_prompt: e.target.value })
+                    }
+                  />
+                </label>
+              )}
               <label>
                 When to check
                 <select
@@ -312,6 +381,15 @@ export function WatchPanel({
                 </small>
 
                 <p>{r.spec.reason}</p>
+                <p>
+                  {r.spec.request_ai === false
+                    ? "Local alert only"
+                    : "Requests AI advice on trigger"}
+                  {r.spec.metric === "relative_alt_change_m"
+                    ? ` · ${r.spec.window_s}s window`
+                    : ""}
+                </p>
+                {r.spec.ai_prompt && <p>On trigger: {r.spec.ai_prompt}</p>}
                 <pre>{JSON.stringify(r.spec, null, 2)}</pre>
                 {r.reading?.evidence?.map((id: string) => (
                   <small key={id}>{id}</small>

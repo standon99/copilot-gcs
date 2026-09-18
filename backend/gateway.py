@@ -325,7 +325,7 @@ class Gateway:
         return {"status": "verified", "items": received}
 
     def synchronize_fence(self, args):
-        from .fence import decode_polygons
+        from .fence import decode_fences
 
         epoch = self.epoch
         applied = []
@@ -339,8 +339,8 @@ class Gateway:
         existing = self.download_mission(1)
         if existing != args["expected_items"]:
             raise ValueError("Onboard fence changed externally; reload before uploading")
-        decode_polygons(existing)  # Do not erase unknown inclusion/circle/return items.
-        decode_polygons(args["items"])
+        decode_fences(existing)  # Do not erase unsupported circle/return items.
+        decode_fences(args["items"])
         expected = args["expected"]
         for name, value in expected.items():
             if not math.isclose(self.read_param(name)["value"], value, rel_tol=0, abs_tol=1e-5):
@@ -355,6 +355,11 @@ class Gateway:
             types = int(expected["FENCE_TYPE"])
             types = (types | 4) if args["items"] else (types & ~4)
             changes = {"FENCE_TYPE": types, "FENCE_ACTION": args["action"]}
+            if "inclusion_mode" in args and "FENCE_OPTIONS" in expected:
+                options = int(expected["FENCE_OPTIONS"])
+                changes["FENCE_OPTIONS"] = (
+                    options | 2 if args["inclusion_mode"] == "union" else options & ~2
+                )
             if "FENCE_AUTOENABLE" in expected:
                 changes["FENCE_AUTOENABLE"] = 0
             changes["FENCE_ENABLE"] = int(

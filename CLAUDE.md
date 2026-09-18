@@ -11,6 +11,10 @@ relevant design, implementation and validation documents before making changes.
 - Use one **Flight** workspace: vehicle selection, live map/mission editor,
   instruments and contextual flight controls. Keep Chat, Alerts and Watch rules
   distinct. Simulation and diagnostics support this workflow.
+- Keep the compact name/connection/model pill in the vehicle bar; do not restore
+  a full-width status banner. Native chat tools operate on staged workspaces;
+  preserve final validation, cancellation, conflict guards and operator-owned
+  automatic request limits when extending them.
 - Keep interface copy plain and functional. Do not add branding taglines,
   motivational phrases, repeated AI slogans or a separate four-step flow strip.
 - Keep the distinction between current simulator control/external telemetry and

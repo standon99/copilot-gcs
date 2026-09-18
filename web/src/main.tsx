@@ -1,3 +1,4 @@
+import { ToolTrace } from "./ToolTrace";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -188,6 +189,12 @@ function MapView({
           "fill-color": [
             "match",
             ["get", "kind"],
+            "inclusion",
+            "#58c9ff",
+            "proposal-inclusion",
+            "#c69bff",
+            "onboard-inclusion",
+            "#ffc46d",
             "proposal",
             "#c69bff",
             "onboard",
@@ -205,6 +212,12 @@ function MapView({
           "line-color": [
             "match",
             ["get", "kind"],
+            "inclusion",
+            "#58c9ff",
+            "proposal-inclusion",
+            "#c69bff",
+            "onboard-inclusion",
+            "#ffc46d",
             "proposal",
             "#c69bff",
             "onboard",
@@ -327,17 +340,28 @@ function MapView({
             : { type: "LineString", coordinates: ring },
       });
     };
-    (draft?.intent?.exclusions || []).forEach((ring: Json, i: number) => {
-      if (areaEdit?.index !== i) addArea(ring, "draft");
-    });
-    (proposal?.polygons || []).forEach((ring: Json) =>
-      addArea(ring, "proposal"),
-    );
+    for (const type of ["exclusion", "inclusion"]) {
+      (draft?.intent?.[type + "s"] || []).forEach((ring: Json, i: number) => {
+        if (!(areaEdit?.index === i && areaEdit?.kind === type))
+          addArea(ring, type === "inclusion" ? "inclusion" : "draft");
+      });
+      (proposal?.[type + "s"] || []).forEach((ring: Json) =>
+        addArea(ring, type === "inclusion" ? "proposal-inclusion" : "proposal"),
+      );
+    }
     if (vehicle?.fence?.enabled && vehicle.fence.polygon)
       (vehicle.fence.polygons || []).forEach((ring: Json) =>
         addArea(ring, "onboard"),
       );
-    if (areaEdit) addArea(areaEdit.points, "drawing");
+    if (vehicle?.fence?.enabled && vehicle.fence.polygon)
+      (vehicle.fence.inclusions || []).forEach((ring: Json) =>
+        addArea(ring, "onboard-inclusion"),
+      );
+    if (areaEdit)
+      addArea(
+        areaEdit.points,
+        areaEdit.kind === "inclusion" ? "inclusion" : "drawing",
+      );
     (m.getSource("areas") as maplibregl.GeoJSONSource).setData({
       type: "FeatureCollection",
       features: areas,
@@ -632,11 +656,15 @@ function MapView({
       captureRef.current = null;
     };
   }, [captureRef, vehicle?.id, draft?.revision, areaEdit, sat]);
-  const saveAreas = async (areas: Json, revision: number) => {
+  const saveAreas = async (
+    areas: Json,
+    revision: number,
+    kind = "exclusion",
+  ) => {
     setAreaBusy(true);
     setAreaError("");
     try {
-      await onSaveAreas(areas, revision);
+      await onSaveAreas(areas, revision, kind);
       setAreaEdit(null);
     } catch (e: any) {
       setAreaError(e.message);
@@ -662,27 +690,30 @@ function MapView({
             ? "HISTORICAL REPLAY"
             : editing
               ? areaEdit
-                ? "EXCLUSION AREA · CLICK CORNERS"
+                ? `${areaEdit.kind.toUpperCase()} AREA · CLICK CORNERS`
                 : "MISSION EDITOR · CLICK TO ADD"
               : "LIVE OPERATIONS"}
         </span>
         <div className="map-buttons">
-          {editing && draft && (
-            <button
-              className={areaEdit ? "active" : ""}
-              disabled={areaBusy || !!areaEdit}
-              onClick={() => {
-                setAreaEdit({
-                  index: -1,
-                  points: [],
-                  revision: draft.revision,
-                });
-                setAreaError("");
-              }}
-            >
-              Draw exclusion area
-            </button>
-          )}
+          {editing &&
+            draft &&
+            ["inclusion", "exclusion"].map((kind) => (
+              <button
+                key={kind}
+                disabled={areaBusy || !!areaEdit}
+                onClick={() => {
+                  setAreaEdit({
+                    kind,
+                    index: -1,
+                    points: [],
+                    revision: draft.revision,
+                  });
+                  setAreaError("");
+                }}
+              >
+                Draw {kind} area
+              </button>
+            ))}
           <button onClick={() => setSat(!sat)} title="Switch basemap">
             {sat ? <Satellite size={16} /> : <Layers size={16} />}{" "}
             {sat ? "Satellite" : "Street"}
@@ -720,14 +751,17 @@ function MapView({
       </div>
       {mapError && <div className="map-error">{mapError}</div>}
       {editing &&
-        (areaEdit || draft?.intent?.exclusions?.length > 0 || areaError) && (
+        (areaEdit ||
+          draft?.intent?.exclusions?.length > 0 ||
+          draft?.intent?.inclusions?.length > 0 ||
+          areaError) && (
           <div className="map-area-tools">
             {areaEdit ? (
               <>
                 <strong>
                   {areaEdit.index < 0
-                    ? "Draw exclusion area"
-                    : `Edit area ${areaEdit.index + 1}`}{" "}
+                    ? `Draw ${areaEdit.kind} area`
+                    : `Edit ${areaEdit.kind} ${areaEdit.index + 1}`}{" "}
                   · {areaEdit.points.length} vertices
                 </strong>
                 <span>
@@ -748,10 +782,12 @@ function MapView({
                       areaEdit.revision !== draft?.revision
                     }
                     onClick={() => {
-                      const rings = [...draft.intent.exclusions];
+                      const rings = [
+                        ...(draft.intent[areaEdit.kind + "s"] || []),
+                      ];
                       if (areaEdit.index < 0) rings.push(areaEdit.points);
                       else rings[areaEdit.index] = areaEdit.points;
-                      void saveAreas(rings, areaEdit.revision);
+                      void saveAreas(rings, areaEdit.revision, areaEdit.kind);
                     }}
                   >
                     {areaBusy ? "Saving…" : "Finish area"}
@@ -781,53 +817,59 @@ function MapView({
             ) : (
               <details className="area-manager">
                 <summary>
-                  Manage areas · {draft?.intent?.exclusions?.length || 0} in
-                  draft
+                  Manage areas ·{" "}
+                  {(draft?.intent?.exclusions?.length || 0) +
+                    (draft?.intent?.inclusions?.length || 0)}{" "}
+                  in draft
                 </summary>
                 <div className="area-list">
-                  {(draft?.intent?.exclusions || []).map(
-                    (ring: Json, index: number) => (
-                      <div key={index}>
-                        <button
-                          disabled={areaBusy}
-                          onClick={() => {
-                            const bounds = new maplibregl.LngLatBounds();
-                            ring.forEach((p: Json) => bounds.extend(p));
-                            map.current?.fitBounds(bounds, {
-                              padding: 60,
-                              maxZoom: 19,
-                            });
-                            setAreaEdit({
-                              index,
-                              points: ring.map((p: Json) => [...p]),
-                              revision: draft.revision,
-                            });
-                            setAreaError("");
-                          }}
-                        >
-                          Edit area {index + 1} · {ring.length} corners
-                        </button>
-                        <button
-                          disabled={areaBusy}
-                          aria-label={`Remove area ${index + 1}`}
-                          onClick={() =>
-                            void saveAreas(
-                              draft.intent.exclusions.filter(
-                                (_: Json, i: number) => i !== index,
-                              ),
-                              draft.revision,
-                            )
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                  {["inclusion", "exclusion"].flatMap((kind) =>
+                    (draft?.intent?.[kind + "s"] || []).map(
+                      (ring: Json, index: number) => (
+                        <div key={kind + index}>
+                          <button
+                            disabled={areaBusy}
+                            onClick={() => {
+                              const bounds = new maplibregl.LngLatBounds();
+                              ring.forEach((p: Json) => bounds.extend(p));
+                              map.current?.fitBounds(bounds, {
+                                padding: 60,
+                                maxZoom: 19,
+                              });
+                              setAreaEdit({
+                                kind,
+                                index,
+                                points: ring.map((p: Json) => [...p]),
+                                revision: draft.revision,
+                              });
+                              setAreaError("");
+                            }}
+                          >
+                            Edit {kind} {index + 1} · {ring.length} corners
+                          </button>
+                          <button
+                            disabled={areaBusy}
+                            aria-label={`Remove ${kind} ${index + 1}`}
+                            onClick={() =>
+                              void saveAreas(
+                                draft.intent[kind + "s"].filter(
+                                  (_: Json, i: number) => i !== index,
+                                ),
+                                draft.revision,
+                                kind,
+                              )
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ),
                     ),
                   )}
                 </div>
                 <span>
-                  Red: draft · Purple: AI proposal · Amber: onboard snapshot.
-                  Upload fences below.
+                  Blue: inclusion · Red: exclusion · Purple: proposal · Amber:
+                  onboard
                 </span>
               </details>
             )}
@@ -981,6 +1023,7 @@ function App() {
     current?.draft_revision,
     current?.active_revision,
     current?.epoch,
+    current?.agent_run?.status,
   ]);
   const guard = async (fn: () => Promise<any>, label = "") => {
     setError("");
@@ -1015,6 +1058,13 @@ function App() {
         const data = JSON.parse(e.data);
         setVehicles(data.vehicles);
         setJobs(data.jobs);
+        if (data.configuration)
+          setConfig((old: any) =>
+            old &&
+            old.settings_revision !== data.configuration.settings_revision
+              ? { ...old, ...data.configuration }
+              : old,
+          );
       };
       socket.onclose = () => {
         setWsState(false);
@@ -1276,37 +1326,6 @@ function App() {
     );
   return (
     <div className="app">
-      <header>
-        <div className="brand">
-          <div className="brand-symbol">
-            <img src="/icon.svg" alt="" width="38" height="38" />
-          </div>
-          <div>
-            <strong>
-              COPILOT <span>GCS</span>
-            </strong>
-          </div>
-        </div>
-        <div className="header-center">
-          <span className={"dot " + (wsState ? "" : "bad")} />
-          <span>
-            {wsState ? "LOCAL GATEWAY ONLINE" : "GATEWAY DISCONNECTED"}
-          </span>
-          <span className="divider" />
-          <span className="sitl-label">
-            {current
-              ? current.owned
-                ? "SIMULATION"
-                : "TELEMETRY CONNECTION"
-              : "NO VEHICLE CONNECTED"}
-          </span>
-        </div>
-        <button onClick={() => setTab("settings")} className="model-chip">
-          <span className={"dot " + (config.configured ? "" : "bad")} />
-          {config.model}
-          <ChevronDown size={14} />
-        </button>
-      </header>
       <div className="body">
         <nav className="rail">
           {[
@@ -1363,6 +1382,35 @@ function App() {
                 <span className="muted">No vehicle connected</span>
               )}
             </div>
+            <header
+              className="status-island"
+              aria-label="Ground station and model"
+            >
+              <div className="brand">
+                <img src="/icon.svg" alt="" width="23" height="23" />
+                <strong>
+                  Copilot <span>GCS</span>
+                </strong>
+              </div>
+              <span
+                role="status"
+                aria-label={
+                  wsState ? "Gateway connected" : "Gateway disconnected"
+                }
+                title={wsState ? "Gateway connected" : "Gateway disconnected"}
+                className={"connection-symbol " + (wsState ? "" : "offline")}
+              >
+                <Radio size={15} />
+              </span>
+              <button
+                onClick={() => setTab("settings")}
+                className="model-chip"
+                title={`Model: ${config.model}. Open settings.`}
+              >
+                <span>{config.model}</span>
+                <ChevronDown size={12} />
+              </button>
+            </header>
             <div className="launch">
               <button
                 onClick={() => setTab("settings")}
@@ -1666,14 +1714,18 @@ function App() {
                       setSelected={setSelected}
                       home={config.home}
                       captureRef={captureMap}
-                      proposal={work?.exclusion_proposal}
-                      onSaveAreas={async (areas: Json, revision: number) => {
+                      proposal={work?.geofence_proposal}
+                      onSaveAreas={async (
+                        areas: Json,
+                        revision: number,
+                        kind: string,
+                      ) => {
                         setWork(
                           await api(`/vehicles/${vid}/draft`, "PUT", {
                             expected_revision: revision,
                             draft: {
                               ...draft,
-                              intent: { ...draft.intent, exclusions: areas },
+                              intent: { ...draft.intent, [kind + "s"]: areas },
                             },
                           }),
                         );
@@ -1752,7 +1804,8 @@ function App() {
                             <button
                               disabled={
                                 !draft?.waypoints.length &&
-                                !draft?.intent?.exclusions?.length
+                                !draft?.intent?.exclusions?.length &&
+                                !draft?.intent?.inclusions?.length
                               }
                               onClick={() =>
                                 guard(() =>
@@ -2072,31 +2125,60 @@ function App() {
                               </label>
                             </div>
                             <label>
-                              Exclusion polygons · JSON arrays of [longitude,
-                              latitude]
-                              <textarea
-                                key={draft.revision + "polygons"}
-                                defaultValue={JSON.stringify(
-                                  draft.intent.exclusions,
-                                )}
-                                onBlur={(e) =>
-                                  guard(async () => {
-                                    const x = JSON.parse(e.target.value);
-                                    if (
-                                      JSON.stringify(x) !==
-                                      JSON.stringify(draft.intent.exclusions)
-                                    )
-                                      await save({
-                                        ...draft,
-                                        intent: {
-                                          ...draft.intent,
-                                          exclusions: x,
-                                        },
-                                      });
-                                  })
+                              Multiple inclusion areas
+                              <select
+                                value={
+                                  draft.intent.inclusion_mode || "intersection"
                                 }
-                              />
+                                onChange={(e) =>
+                                  guard(() =>
+                                    save({
+                                      ...draft,
+                                      intent: {
+                                        ...draft.intent,
+                                        inclusion_mode: e.target.value,
+                                      },
+                                    }),
+                                  )
+                                }
+                              >
+                                <option value="intersection">
+                                  Stay inside all areas (overlap)
+                                </option>
+                                <option value="union">
+                                  Stay inside any area (union)
+                                </option>
+                              </select>
                             </label>
+                            {["inclusions", "exclusions"].map((kind) => (
+                              <label key={kind}>
+                                {kind} · JSON [longitude, latitude]
+                                <textarea
+                                  key={draft.revision + kind}
+                                  defaultValue={JSON.stringify(
+                                    draft.intent[kind] || [],
+                                  )}
+                                  onBlur={(e) =>
+                                    guard(async () => {
+                                      const polygons = JSON.parse(
+                                        e.target.value,
+                                      );
+                                      if (
+                                        JSON.stringify(polygons) !==
+                                        JSON.stringify(draft.intent[kind])
+                                      )
+                                        await save({
+                                          ...draft,
+                                          intent: {
+                                            ...draft.intent,
+                                            [kind]: polygons,
+                                          },
+                                        });
+                                    })
+                                  }
+                                />
+                              </label>
+                            ))}
                           </details>
                         )}
                       </div>
@@ -2633,13 +2715,22 @@ function App() {
                           Cancel trial & restore
                         </button>
                       )}
-                    {duration < config.monitor_interval && (
+                    {duration <
+                      Math.max(
+                        config.monitor_interval,
+                        config.automatic_min_interval || 60,
+                      ) && (
                       <p className="editor-help">
-                        Your {config.monitor_interval}s assessment delay exceeds
-                        this {duration}s observation window. Increase the trial
-                        duration or lower the delay in Settings to collect
-                        assessments after the fault. Trials do not silently
-                        increase your request rate.
+                        Your{" "}
+                        {Math.max(
+                          config.monitor_interval,
+                          config.automatic_min_interval || 60,
+                        )}
+                        s effective assessment delay exceeds this {duration}s
+                        observation window. Increase the trial duration or lower
+                        the delay in Settings to collect assessments after the
+                        fault. Trials do not silently increase your request
+                        rate.
                       </p>
                     )}
                     <div className="lab-guidance">
@@ -2708,16 +2799,16 @@ function App() {
                   />
                   <span>
                     {!current.monitor_effective
-                      ? "Live insights paused · chat is available"
+                      ? "Periodic monitoring off"
                       : !current.monitor_enabled
                         ? "Live insights paused for this vehicle"
-                        : current.monitor_status}
+                        : `${current.monitor_status} · every ${current.monitoring?.effective_interval_s || config.monitor_interval}s`}
                   </span>
                   <button
                     title={
                       current.monitor_enabled
-                        ? "Pause monitor"
-                        : "Resume monitor"
+                        ? "Pause periodic monitoring"
+                        : "Resume periodic monitoring"
                     }
                     onClick={() =>
                       guard(() =>
@@ -2843,6 +2934,7 @@ function App() {
                         <span>{clock(m.ts)}</span>
                       </div>
                       <p>{m.text}</p>
+                      <ToolTrace steps={m.tool_trace} />
                       {m.change && (
                         <div className="change-card">
                           <strong>
@@ -2881,31 +2973,32 @@ function App() {
                       )}
                     </div>
                   ))}
-                  {work?.exclusion_proposal && (
+                  {work?.geofence_proposal && (
                     <div className="area-proposal">
-                      <strong>AI exclusion-area proposal</strong>
-                      <p>{work.exclusion_proposal.reason}</p>
+                      <strong>AI geofence proposal</strong>
+                      <p>{work.geofence_proposal.reason}</p>
                       <p>
-                        Purple outlines preview{" "}
-                        {work.exclusion_proposal.polygons.length} areas. Accept
-                        replaces all {draft.intent.exclusions.length} draft
-                        areas. Onboard fences are unchanged until uploaded.
+                        {work.geofence_proposal.inclusions.length} inclusion ·{" "}
+                        {work.geofence_proposal.exclusions.length} exclusion
+                        areas. Inclusion mode:{" "}
+                        {work.geofence_proposal.inclusion_mode}. Accept changes
+                        the draft; upload is separate.
                       </p>
                       <div className="button-row">
                         <button
                           className="primary"
                           disabled={
-                            work.exclusion_proposal.base_revision !==
+                            work.geofence_proposal.base_revision !==
                               draft.revision ||
-                            work.exclusion_proposal.epoch !== current.epoch
+                            work.geofence_proposal.epoch !== current.epoch
                           }
                           onClick={() =>
                             guard(async () => {
                               setWork(
                                 await api(
-                                  `/vehicles/${vid}/exclusions/accept`,
+                                  `/vehicles/${vid}/geofences/accept`,
                                   "POST",
-                                  { proposal_id: work.exclusion_proposal.id },
+                                  { proposal_id: work.geofence_proposal.id },
                                 ),
                               );
                             })
@@ -2918,9 +3011,9 @@ function App() {
                             guard(async () => {
                               setWork(
                                 await api(
-                                  `/vehicles/${vid}/exclusions/dismiss`,
+                                  `/vehicles/${vid}/geofences/dismiss`,
                                   "POST",
-                                  { proposal_id: work.exclusion_proposal.id },
+                                  { proposal_id: work.geofence_proposal.id },
                                 ),
                               );
                             })
@@ -2929,7 +3022,7 @@ function App() {
                           Dismiss
                         </button>
                       </div>
-                      {work.exclusion_proposal.base_revision !==
+                      {work.geofence_proposal.base_revision !==
                         draft.revision && (
                         <p>Draft changed; request a new proposal.</p>
                       )}
@@ -3046,11 +3139,18 @@ function App() {
                         )}
                       </div>
                     ))}
-                  {chatBusy && (
-                    <div className="thinking">
-                      <span className="dot" />
-                      Checking context with {config.model}…
-                    </div>
+                  {(chatBusy || current.agent_run?.status === "running") && (
+                    <ToolTrace
+                      running
+                      steps={current.agent_run?.steps || []}
+                      round={current.agent_run?.round}
+                      maxRounds={current.agent_run?.max_rounds}
+                      onCancel={() =>
+                        guard(() =>
+                          api(`/vehicles/${vid}/agent/cancel`, "POST", {}),
+                        )
+                      }
+                    />
                   )}
                   <div ref={chatBottom} />
                 </div>

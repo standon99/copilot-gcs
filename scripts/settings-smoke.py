@@ -4,6 +4,7 @@ Requires the application running with no active trials. Restores provider prefer
 and stops only its own simulator. The stub makes no cloud calls.
 """
 
+import argparse
 import json
 import threading
 import time
@@ -13,6 +14,10 @@ import integration as api
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--url", default="http://127.0.0.1:8080", help="Ground-station origin")
+    args = parser.parse_args()
+    api.client.base_url = args.url
     received = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -46,7 +51,9 @@ def main():
             "base_url": f"http://127.0.0.1:{server.server_port}/v1",
             "model": "local-stub-transport-test",
             "monitor_interval": 10,
+            "automatic_min_interval": 10,
             "monitor_enabled": True,
+            "watch_inference_enabled": False,
         }
         api.call("PUT", "/settings", changed)
         v = api.call("POST", "/sitl", {"profile": "rover"})

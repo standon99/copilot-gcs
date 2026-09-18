@@ -1,6 +1,14 @@
 # SITL evaluation: can the copilot detect faults without being told?
 
-Draft v0.3 · 2026-09-17 · Proposed protocol, no benchmark results yet
+Design baseline v0.3 · 2026-09-17 · Proposed evaluation protocol
+
+Current implementation and development smoke results are in
+[implementation](implementation.md) and [validation](validation.md). The inventory
+and acceptance targets below preserve the original pre-implementation baseline.
+Native chat tools now use a separate editing loop; the trial monitor remains
+read-only and receives no custom watch prompts, focus or event triggers. Trials
+use the default Settings cadence and the shared automatic request cap, including
+repairs; record both settings and allow enough observation time for that cap.
 
 The experiment must distinguish **noticing abnormal evidence**, **identifying a cause**, **relaying an existing warning**, and **giving useful advice in time**. A fluent explanation after the vehicle has already reported a fault is not evidence of early independent detection.
 

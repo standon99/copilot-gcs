@@ -2839,3 +2839,132 @@ footer .divider {
     min-width: 0;
   }
 }
+
+/* Compact station identity shares the vehicle toolbar; no separate header row. */
+.vehicle-bar {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  min-height: 56px;
+  height: auto;
+}
+.vehicle-tabs {
+  min-width: 0;
+  align-self: stretch;
+}
+.vehicle-bar .launch {
+  justify-self: end;
+}
+header.status-island {
+  height: 38px;
+  min-height: 38px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid #35434c;
+  border-radius: 999px;
+  background: #0d161eed;
+  box-shadow: 0 3px 14px #0005;
+  gap: 12px;
+  justify-self: center;
+}
+.status-island .brand {
+  gap: 7px;
+  white-space: nowrap;
+}
+.status-island .brand strong {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.connection-symbol {
+  display: inline-flex;
+  color: var(--teal);
+}
+.connection-symbol.offline {
+  color: #ff9a87;
+}
+.status-island .model-chip {
+  border: 0;
+  background: #223139;
+  border-radius: 99px;
+  padding: 6px 9px;
+  font-size: 10px;
+  min-width: 0;
+  max-width: 185px;
+}
+.status-island .model-chip span {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.tool-trace {
+  border: 1px solid #344c56;
+  border-radius: 7px;
+  padding: 10px;
+  margin: 10px 0;
+  font-size: 12px;
+  background: #101e26;
+}
+.tool-trace > summary {
+  cursor: pointer;
+  color: #a9e4da;
+}
+.tool-step {
+  padding: 8px 0;
+  border-bottom: 1px solid #263943;
+}
+.tool-step summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tool-step.error summary {
+  color: #ffaaa0;
+}
+.tool-step pre {
+  max-height: 180px;
+  font-size: 10px;
+}
+.watch-monitoring {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.map-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 1350px) {
+  .vehicle-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  header.status-island {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .vehicle-tabs,
+  .vehicle-bar .launch {
+    grid-row: 2;
+  }
+}
+@media (max-width: 650px) {
+  .vehicle-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .vehicle-tabs {
+    width: 100%;
+    min-height: 35px;
+  }
+  .vehicle-bar .launch {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  header.status-island {
+    max-width: 100%;
+  }
+}

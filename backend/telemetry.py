@@ -3,6 +3,7 @@ import math
 import time
 from collections import deque
 
+from .geography import inclusion_region, strictly_inside
 from .normalization import normalized_fields
 from .planning import distance
 
@@ -322,6 +323,16 @@ class Telemetry:
                             "Vehicle is inside an approved exclusion region.",
                             "GLOBAL_POSITION_INT",
                         )
+                region = inclusion_region(
+                    intent.get("inclusions", []), intent.get("inclusion_mode", "intersection")
+                )
+                if region is not None and not strictly_inside(region, Point(p["lon"], p["lat"])):
+                    add(
+                        "intent_inclusion",
+                        "critical",
+                        "Vehicle is outside or on the approved inclusion boundary.",
+                        "GLOBAL_POSITION_INT",
+                    )
                 nav = [w for w in active["waypoints"] if w["command"] in (16, 17, 19, 21, 22)]
                 if intent.get("corridor_m") and len(nav) > 1 and s["armed"] and s["mode"] == "AUTO":
                     scale = math.cos(math.radians(p["lat"]))
