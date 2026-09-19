@@ -51,6 +51,9 @@ export function SettingsPanel({
       </div>
     );
   const change = (patch: any) => setForm({ ...form, ...patch });
+  const changeNumber = (field: string, value: string) =>
+    // Keep cleared inputs empty while editing; Number("") would insert a zero.
+    change({ [field]: value === "" ? "" : Number(value) });
   const dirty = JSON.stringify(saved) !== JSON.stringify(form);
   const activeCount = vehicles.filter((v: any) => v.monitor_enabled).length;
   return (
@@ -89,9 +92,7 @@ export function SettingsPanel({
               min="10"
               max="86400"
               value={form.monitor_interval}
-              onChange={(e) =>
-                change({ monitor_interval: Number(e.target.value) })
-              }
+              onChange={(e) => changeNumber("monitor_interval", e.target.value)}
             />
           </label>
           <div className="button-row">
@@ -115,7 +116,7 @@ export function SettingsPanel({
               max="86400"
               value={form.automatic_min_interval}
               onChange={(e) =>
-                change({ automatic_min_interval: +e.target.value })
+                changeNumber("automatic_min_interval", e.target.value)
               }
             />
           </label>
@@ -145,7 +146,7 @@ export function SettingsPanel({
               max="3600"
               value={form.watch_min_interval}
               onChange={(e) =>
-                change({ watch_min_interval: Number(e.target.value) })
+                changeNumber("watch_min_interval", e.target.value)
               }
             />
           </label>
@@ -161,7 +162,7 @@ export function SettingsPanel({
               min="2"
               max="16"
               value={form.agent_max_rounds}
-              onChange={(e) => change({ agent_max_rounds: +e.target.value })}
+              onChange={(e) => changeNumber("agent_max_rounds", e.target.value)}
             />
           </label>
           <label>
@@ -171,7 +172,7 @@ export function SettingsPanel({
               min="512"
               max="4096"
               value={form.agent_max_tokens}
-              onChange={(e) => change({ agent_max_tokens: +e.target.value })}
+              onChange={(e) => changeNumber("agent_max_tokens", e.target.value)}
             />
           </label>
           <label>
@@ -182,7 +183,7 @@ export function SettingsPanel({
               max="120"
               value={form.inference_timeout}
               onChange={(e) =>
-                change({ inference_timeout: Number(e.target.value) })
+                changeNumber("inference_timeout", e.target.value)
               }
             />
           </label>

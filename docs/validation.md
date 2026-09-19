@@ -1,5 +1,21 @@
 # Validation record
 
+## Numeric inference settings — 2026-09-19
+
+Fixed clearing a numeric Settings field immediately inserting `0`. Empty edits
+now remain empty; entered values still use numeric payloads and the existing
+server validation. This applies to the timeout, periodic/watch intervals, hard
+automatic spacing, model-call limit and output-token limit.
+
+Chrome reproduced the original timeout bug, then verified clearing and typing
+in all six fields after the fix, including an empty timeout followed by `60`.
+Reload saved restored the form; saved preferences remained unchanged. All
+**20 frontend tests**, formatting and the production TypeScript/Vite build
+passed; the existing bundle-size advisory remains. No inference requests or
+vehicle actions were made, and backend tests were not rerun for this frontend
+change. README, usage, implementation, development and setup documentation were
+reviewed and remain accurate; the layout and screenshots are unchanged.
+
 ## Spatial tools and 3D terrain — 2026-09-19
 
 Iteration based on 414a82e. **182 Python tests and 20 frontend tests passed**,
