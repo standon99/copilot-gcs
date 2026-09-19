@@ -28,7 +28,12 @@ and belongs only to the vehicles selected when sent. Running server state keeps
 the waiting bubble and Stop available after reload; completion, failure or
 cancellation removes it. Model-request counts and tool traces are collapsed
 behind Activity/Reply details. The UI follows new messages unless the reader has
-scrolled up. Replies arrive whole; there is no token streaming.
+scrolled up. Native chat streams text through the isolated worker to the existing
+500 ms WebSocket snapshots. Live stages distinguish queueing, provider waiting,
+thinking, writing, tool execution and checking. Explicit provider reasoning is
+available in a collapsed Thinking panel; partial replies and Thinking survive
+page reload. Failed/cancelled turns show an error and keep provisional text in
+unfinished response details. Models without thinking output omit that panel.
 
 Assistant text uses pinned `react-markdown` 10.1.0 for paragraphs, emphasis,
 lists and code. Raw HTML is skipped, no raw-HTML plugin is enabled, links use the
@@ -80,7 +85,15 @@ provider failure, cancellation, deadline or round limit discards staged changes.
 Successful draft edits become one visible version. No await occurs between final
 guards and the local batch commit; disk failure there is reported as an
 interrupted commit requiring workspace inspection, not an atomic rollback.
-The public trace contains tool arguments/results, never private reasoning.
+The public trace contains tool arguments/results and bounded, explicitly
+returned provider thinking; unrelated provider fields are excluded. Thinking is
+retained in local chat/audit entries and replayed within the same tool turn.
+SSE tool fragments, including Ollama's repeated-index complete calls, are
+assembled before execution. Incomplete, oversized or failed streams cannot
+commit edits. Compatible endpoints returning a single JSON response work
+without a retry. Streaming preserves cancellation, provider/turn deadlines,
+usage limits, credential routing and worker isolation. Automatic assessments
+and connection tests remain buffered. See the [stream contract](ai-interface.md).
 Initial public context, effective system text, schemas and full bounded tool
 results are audited; image bytes are excluded. Review-only turns expose only
 reads. There is no tool for upload, flight, connections or fault injection.

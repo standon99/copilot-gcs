@@ -1,14 +1,32 @@
-"""Finite native function-call loop. Only tool arguments/results form the public trace."""
+"""Finite function-call loop with provisional text and provider thinking updates."""
 
 import asyncio
 import json
 import time
 
 from .agent_tools import TurnConflict, tool_schemas
+from .inference_worker import REASONING_FIELDS, reasoning_field
 
 
 class TurnLimit(RuntimeError):
     pass
+
+
+def context_text_size(messages):
+    return sum(
+        (
+            len(m["content"])
+            if isinstance(m.get("content"), str)
+            else sum(
+                len(part.get("text", ""))
+                for part in m.get("content", [])
+                if part.get("type") == "text"
+            )
+        )
+        + sum(len(m.get(key, "")) for key in REASONING_FIELDS)
+        + len(json.dumps(m.get("tool_calls", [])))
+        for m in messages
+    )
 
 
 async def run_turn(provider, turn, system, context, options, run, guard_settings):
@@ -25,20 +43,38 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
     usage = {}
     meta = {}
     started = time.monotonic()
+    run["responses"] = []
     # Per-request deadlines plus a finite whole-turn bound, including queue time.
     deadline = min(600, options["agent_max_rounds"] * (options["inference_timeout"] + 5))
     for index in range(options["agent_max_rounds"]):
         turn.guard()
         guard_settings()
+        if context_text_size(messages) > 350000:
+            raise TurnLimit("Turn context limit reached; no turn changes applied")
         run.update(round=index + 1, status="running")
+        response = {"round": index + 1, "content": "", "thinking": "", "status": "running"}
+        run["responses"].append(response)
+
+        def progress(event, response=response):
+            if event["event"] == "delta":
+                field = event["field"]
+                response[field] += event["text"]
+                run["phase"] = "thinking" if field == "thinking" else "responding"
+            else:
+                run["phase"] = event["phase"]
+            run["updated_at"] = time.time()
+
         remaining = deadline - (time.monotonic() - started)
         if remaining <= 0:
             raise TurnLimit("Turn deadline reached; no turn changes applied")
         message, meta = await asyncio.wait_for(
-            provider.tool_turn(system, messages, toolset, options), remaining
+            provider.tool_turn(system, messages, toolset, options, on_event=progress), remaining
         )
         turn.guard()
         guard_settings()
+        thinking_key, thinking = reasoning_field(message)
+        response.update(content=message.get("content") or "", thinking=thinking, status="received")
+        run.update(phase="checking", updated_at=time.time())
         for key, value in meta.get("usage", {}).items():
             if isinstance(value, (int, float)):
                 usage[key] = usage.get(key, 0) + value
@@ -50,7 +86,14 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
             missing = turn.missing_validation()
             visual = turn.needs_visual_review()
             if missing or visual:
-                messages.append({"role": "assistant", "content": reply})
+                response["status"] = "review"
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": reply,
+                        **({thinking_key: thinking} if thinking_key else {}),
+                    }
+                )
                 messages.append(
                     {
                         "role": "user",
@@ -64,6 +107,7 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
                     }
                 )
                 continue
+            response["status"] = "final"
             return reply, {
                 **meta,
                 "usage": usage,
@@ -73,7 +117,11 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
             }
         if len(calls) > 8 or len(run["steps"]) + len(calls) > 40:
             raise TurnLimit("Tool call limit reached; no turn changes applied")
-        assistant = {"role": "assistant", "content": "", "tool_calls": []}
+        response["status"] = "tool_calls"
+        assistant = {"role": "assistant", "content": message.get("content") or "", "tool_calls": []}
+        if thinking_key:
+            # Replay only the provider's explicit thinking field within this tool turn.
+            assistant[thinking_key] = thinking
         parsed = []
         for call in calls:
             ident = call.get("id")
@@ -95,6 +143,7 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
             parsed.append((ident, name, raw))
         messages.append(assistant)
         for ident, name, raw in parsed:
+            run.update(phase="tool", active_tool=name, updated_at=time.time())
             step = {
                 "id": ident,
                 "name": name,
@@ -123,6 +172,7 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
             if len(serialized) > 100000:
                 raise TurnLimit("Tool result too large; request a smaller page")
             step["result"] = result
+            run.update(phase="checking", active_tool=None, updated_at=time.time())
             messages.append({"role": "tool", "tool_call_id": ident, "content": serialized})
             if not result["ok"]:
                 signature = name + serialized + json.dumps(step.get("arguments"), sort_keys=True)
@@ -154,10 +204,6 @@ async def run_turn(provider, turn, system, context, options, run, guard_settings
                 }
             )
             turn.pending_images.clear()
-        # Images are separately size bounded. Do not retain hidden reasoning or arbitrary provider fields.
-        text_size = sum(len(m["content"]) for m in messages if isinstance(m.get("content"), str))
-        if text_size > 350000:
-            raise TurnLimit("Turn context limit reached; no turn changes applied")
     raise TurnLimit(
         "Maximum model rounds reached; no turn changes applied. Narrow the request or adjust Settings."
     )

@@ -3,11 +3,36 @@
 Chat uses native OpenAI-compatible function calls through `/v1/chat/completions`.
 The model reads GCS state, requests typed edits, receives each tool result and can
 continue checking or correcting its work in the same turn. It finishes with a
-normal conversational reply. Chat shows a waiting message with the model, elapsed
-time and **Stop**. Expand **Activity details** while waiting or **Reply details**
-afterward to inspect arguments, results, errors and model-request counts.
-Replies are delivered on completion, not streamed; animated dots only indicate
-pending work. Private model reasoning is not displayed or recorded.
+normal conversational reply. Chat streams response text and shows the model,
+elapsed time, current stage and **Stop**. Expand **Thinking** for reasoning text
+explicitly returned by the provider. Expand **Activity details** while running
+or **Reply details** afterward for arguments, results, errors, intermediate or
+unfinished responses and model-request counts. Thinking is optional, collapsed
+by default and retained with local chat/audit data; no trace is invented for
+models that do not expose one.
+
+Chat requests use `stream: true` and `stream_options.include_usage` on the same
+`/v1/chat/completions` endpoint. The isolated worker parses bounded SSE events;
+`delta.content` updates the reply, while string `reasoning`, `reasoning_content`
+or `thinking` fields update Thinking. Only the returned reasoning field is
+replayed in subsequent requests within that tool turn; unrelated provider
+metadata is discarded. The backend publishes `agent_run.phase`, `active_tool`,
+`updated_at` and per-round `responses` through the existing 500 ms WebSocket
+snapshots. Reload restores the active stream from server state. Finished chat
+entries expose the same per-round trace as `model_responses`.
+
+Tool fragments are assembled before validation/execution. Distinct complete
+Ollama tool calls that reuse a stream index remain separate; ambiguous duplicates
+are rejected. A missing completion, token limit, provider error or Stop prevents
+staged edits from committing. Partial text is provisional; failed
+turns retain it only as unfinished response details. Transport is bounded to
+2 MiB per response, with 16,000 reply and 32,000 thinking characters per call;
+thinking and tool arguments count toward the 350,000-character turn context
+limit. A JSON response to the same request is accepted without retrying.
+Automatic assessments stay buffered. Existing request limits, total deadlines
+and token settings apply; streaming does not request increased thinking effort.
+[Ollama streaming](https://docs.ollama.com/capabilities/streaming) and
+[compatibility](https://docs.ollama.com/api/openai-compatibility).
 
 The versioned catalog is available at
 [GET /api/ai/capabilities](http://127.0.0.1:8080/api/ai/capabilities), linked as

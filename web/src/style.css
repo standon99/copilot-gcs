@@ -1393,14 +1393,52 @@ td input {
   text-decoration: underline;
 }
 .waiting-bubble {
+  min-height: 50px;
+}
+.reply-status {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 50px;
 }
-.waiting-bubble > [role="status"] {
+.reply-status > [role="status"] {
   color: #bfd0d9;
   font-size: 12px;
+}
+.waiting-bubble .message-markdown {
+  margin-top: 12px;
+}
+.thinking-trace {
+  margin: 5px 3px 9px;
+  font-size: 11px;
+  color: #a8bdc9;
+}
+.thinking-trace > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 3px 0;
+}
+.thinking-content {
+  max-height: 230px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 8px 12px;
+  margin-top: 5px;
+  background: #102028;
+  border-left: 2px solid #44665f;
+  border-radius: 0 6px 6px 0;
+}
+.thinking-content p {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  margin: 0;
+}
+.thinking-content section + section {
+  margin-top: 12px;
+}
+.thinking-content small {
+  display: block;
+  margin-bottom: 5px;
+  color: #829ba9;
 }
 .typing-dots {
   display: inline-flex;

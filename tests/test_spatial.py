@@ -316,7 +316,7 @@ async def test_visual_feedback_reaches_next_model_call_without_raster_in_trace()
         {"content": "Proposed a 1 km square; review the boundary."},
     ]
 
-    async def respond(system, messages, tools, options):
+    async def respond(system, messages, tools, options, on_event=None):
         if len(replies) == 1:
             assert messages[-1]["role"] == "user"
             assert messages[-1]["content"][-1]["type"] == "image_url"

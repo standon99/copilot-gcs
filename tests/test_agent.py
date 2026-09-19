@@ -79,7 +79,7 @@ async def test_native_multistep_results_feed_next_model_call_without_live_edits(
         {"content": "Changed altitude to 35 m above home."},
     ]
 
-    async def respond(system, messages, tools, options):
+    async def respond(system, messages, tools, options, on_event=None):
         assert v.draft["waypoints"][0]["alt"] == 20
         if len(messages) > 2:
             assert messages[-1]["role"] == "tool"
@@ -113,7 +113,7 @@ async def test_invalid_tool_arguments_return_error_and_model_can_repair():
     ]
     count = 0
 
-    async def respond(system, messages, tools, options):
+    async def respond(system, messages, tools, options, on_event=None):
         nonlocal count
         if count == 1:
             assert not json.loads(messages[-1]["content"])["ok"]
@@ -307,7 +307,7 @@ async def test_endpoint_commit_and_cancel_are_reviewable(monkeypatch):
     assert v.draft["revision"] == 1 and v.draft["waypoints"][0]["alt"] == 40
     assert len(v.chat[-1]["tool_trace"]) == 2 and v.agent_run["status"] == "completed"
 
-    async def pending(*args):
+    async def pending(*args, **kwargs):
         await asyncio.Future()
 
     monkeypatch.setattr(main.provider, "tool_turn", pending)

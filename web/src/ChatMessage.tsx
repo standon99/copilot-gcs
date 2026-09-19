@@ -1,7 +1,27 @@
 import React, { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { Square } from "lucide-react";
-import { ToolTrace } from "./ToolTrace";
+import { ThinkingTrace, ToolTrace } from "./ToolTrace";
+import { chatProgress } from "./chatProgress.mjs";
+
+function MessageText({ text }: { text: string }) {
+  return (
+    <div className="message-markdown">
+      <Markdown
+        skipHtml
+        components={{
+          a: ({ node: _node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+          // Do not fetch unsolicited images included in model-generated text.
+          img: ({ alt }) => <span>{alt || "Image"}</span>,
+        }}
+      >
+        {text}
+      </Markdown>
+    </div>
+  );
+}
 
 export function ChatMessage({ message, children, pending = false }: any) {
   const user = message.role === "user";
@@ -32,24 +52,12 @@ export function ChatMessage({ message, children, pending = false }: any) {
               })}
         </time>
       </div>
+      {!user && <ThinkingTrace responses={message.model_responses} />}
       <div className="message-bubble">
         {user || message.role === "error" ? (
           <p className="message-plain">{message.text}</p>
         ) : (
-          <div className="message-markdown">
-            <Markdown
-              skipHtml
-              components={{
-                a: ({ node: _node, ...props }) => (
-                  <a {...props} target="_blank" rel="noopener noreferrer" />
-                ),
-                // Do not fetch unsolicited images included in model-generated text.
-                img: ({ alt }) => <span>{alt || "Image"}</span>,
-              }}
-            >
-              {message.text}
-            </Markdown>
-          </div>
+          <MessageText text={message.text} />
         )}
       </div>
       {user && message.map_context && (
@@ -63,12 +71,17 @@ export function ChatMessage({ message, children, pending = false }: any) {
         </div>
       )}
       {children}
-      <ToolTrace steps={message.tool_trace} round={message.model?.rounds} />
+      <ToolTrace
+        steps={message.tool_trace}
+        responses={message.model_responses}
+        round={message.model?.rounds || message.model_responses?.length}
+      />
     </article>
   );
 }
 
 export function WaitingReply({ model, startedAt, run, onStop }: any) {
+  const response = run?.responses?.at(-1);
   const [elapsed, setElapsed] = useState(0);
   const [stopping, setStopping] = useState(false);
   useEffect(() => {
@@ -82,6 +95,7 @@ export function WaitingReply({ model, startedAt, run, onStop }: any) {
     <article
       className="chat-message assistant waiting-reply"
       aria-label="Copilot is preparing a reply"
+      aria-busy="true"
     >
       <div className="message-meta">
         <span>Copilot</span>
@@ -90,14 +104,15 @@ export function WaitingReply({ model, startedAt, run, onStop }: any) {
         </span>
       </div>
       <div className="message-bubble waiting-bubble">
-        <span className="typing-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span role="status">
-          {stopping ? "Stopping…" : "Waiting for reply…"}
-        </span>
+        <div className="reply-status">
+          <span className="typing-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span role="status">{chatProgress(run, stopping)}</span>
+        </div>
+        {response?.content && <MessageText text={response.content} />}
       </div>
       <div className="reply-wait-actions">
         <span aria-label={`Waiting ${elapsed} seconds`}>
@@ -121,8 +136,10 @@ export function WaitingReply({ model, startedAt, run, onStop }: any) {
           <Square size={10} fill="currentColor" /> Stop
         </button>
       </div>
+      <ThinkingTrace responses={run?.responses} />
       <ToolTrace
         steps={run?.steps || []}
+        responses={run?.responses}
         running
         round={run?.round}
         maxRounds={run?.max_rounds}

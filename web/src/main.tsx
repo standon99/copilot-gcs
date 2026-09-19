@@ -1278,6 +1278,10 @@ function App() {
       chatBottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [work?.chat?.length, replyState.waiting, pendingChat, sidePanel]);
   useEffect(() => {
+    if (followChat.current && replyState.waiting)
+      chatBottom.current?.scrollIntoView({ behavior: "instant" });
+  }, [replyState.run?.updated_at]);
+  useEffect(() => {
     followChat.current = true;
   }, [vid]);
   useEffect(() => {
@@ -3107,6 +3111,7 @@ function App() {
                   aria-live="polite"
                   aria-relevant="additions"
                   onScroll={(e) => {
+                    if (e.target !== e.currentTarget) return;
                     const el = e.currentTarget;
                     followChat.current =
                       el.scrollHeight - el.scrollTop - el.clientHeight < 100;

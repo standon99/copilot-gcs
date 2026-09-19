@@ -1,5 +1,27 @@
 # Actual application screenshots
 
+## Streaming chat — 2026-09-19
+
+The update based on **c86e177** added **chat-streaming.jpg** and
+**chat-thinking.jpg** from the production page in Chrome on port 8091, with an
+isolated disarmed Copter and automatic periodic/event inference off.
+
+- **chat-streaming.jpg:** a real `qwen3.5:397b` request after reloading the page;
+  live Thinking text, elapsed time and Stop are visible. Stop then cancelled
+  this turn before any tool executed.
+- **chat-thinking.jpg:** a completed read-only mission discussion with its
+  provider-supplied Thinking section expanded above the answer.
+
+Both are unmodified 1796 × 1043 browser captures, inspected for legibility,
+attribution and secrets. No mission or vehicle action was applied. No fabricated
+responses or mockups are shown. [Validation](../validation.md).
+
+![Live thinking after a page reload](chat-streaming.jpg)
+
+![Thinking and the completed reply](chat-thinking.jpg)
+
+## Spatial tools and terrain
+
 The spatial/terrain update based on **414a82e** added **terrain.jpg** and
 **spatial-tools.jpg** on 2026-09-19, from the production page in Chrome on port
 8091 with an isolated runtime and automatic inference off.

@@ -8,7 +8,7 @@ A web ground control station for ArduPilot **Copter, Plane and Rover**, with an 
 
 ## Features
 
-- **AI chat:** message bubbles, a visible waiting reply and Stop; multi-step tools read, edit and check missions, with expandable details.
+- **AI chat:** streamed replies, expandable Thinking and live tool progress with Stop; multi-step tools read, edit and check missions.
 - **Flight workspace:** 2D/3D terrain map with aircraft at their reported altitude, instruments and flight controls; separate Chat, Alerts and Watch rules.
 - **Planning:** waypoint editing, drawn inclusion/exclusion areas and verified fence upload; parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.

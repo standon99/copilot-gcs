@@ -1316,6 +1316,8 @@ async def interaction(body: Interaction):
         "round": 0,
         "max_rounds": options["agent_max_rounds"],
         "steps": [],
+        "responses": [],
+        "phase": "queued",
         "started_at": time.time(),
     }
     for v in selected:
@@ -1367,7 +1369,7 @@ async def interaction(body: Interaction):
     committing = False
     try:
         # Exact public inputs plus returned tool results make the exchange auditable.
-        # Image bytes and private provider reasoning are intentionally excluded.
+        # Image bytes are excluded. Only explicitly returned thinking is retained.
         from .agent_tools import tool_schemas
 
         for v in selected:
@@ -1448,7 +1450,7 @@ async def interaction(body: Interaction):
                     }
                 )
                 v.parameter_proposals = v.parameter_proposals[-30:]
-            run.update(status="completed", completed_at=time.time())
+            run.update(status="completed", phase="completed", completed_at=time.time())
             entry = {
                 "role": "assistant",
                 "text": reply,
@@ -1456,6 +1458,7 @@ async def interaction(body: Interaction):
                 "change": change,
                 "model": meta,
                 "tool_trace": public_run(run)["steps"],
+                "model_responses": run["responses"],
             }
             v.chat.append(entry)
             event(v.id, "agent_turn", {"entry": entry, "trace": run})
@@ -1473,8 +1476,17 @@ async def interaction(body: Interaction):
                 + str(exc)[:200]
             )
         run.update(
-            status="cancelled" if cancelled else "failed", error=message, completed_at=time.time()
+            status="cancelled" if cancelled else "failed",
+            phase="stopped",
+            error=message,
+            completed_at=time.time(),
         )
+        for response in run["responses"]:
+            if response["status"] in ("running", "received", "final"):
+                response["status"] = "interrupted"
+        for step in run["steps"]:
+            if step["status"] == "running":
+                step["status"] = "cancelled" if cancelled else "error"
         for v in selected:
             v.chat.append(
                 {
@@ -1482,6 +1494,7 @@ async def interaction(body: Interaction):
                     "text": message,
                     "ts": time.time(),
                     "tool_trace": public_run(run)["steps"],
+                    "model_responses": run["responses"],
                 }
             )
             event(v.id, "agent_turn_failed", run)

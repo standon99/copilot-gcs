@@ -1,6 +1,30 @@
 import React from "react";
 
-export function ToolTrace({ steps, running = false, round, maxRounds }: any) {
+export function ThinkingTrace({ responses = [] }: any) {
+  const thoughts = responses.filter((response: any) => response.thinking);
+  if (!thoughts.length) return null;
+  return (
+    <details className="thinking-trace">
+      <summary>Thinking</summary>
+      <div className="thinking-content">
+        {thoughts.map((response: any) => (
+          <section key={response.round}>
+            {thoughts.length > 1 && <small>Request {response.round}</small>}
+            <p>{response.thinking}</p>
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+export function ToolTrace({
+  steps,
+  responses = [],
+  running = false,
+  round,
+  maxRounds,
+}: any) {
   if (!steps?.length && !round && !running) return null;
   return (
     <details className="tool-trace">
@@ -25,6 +49,22 @@ export function ToolTrace({ steps, running = false, round, maxRounds }: any) {
           </pre>
         </details>
       ))}
+      {responses
+        .filter(
+          (response: any) =>
+            response.content && !["running", "final"].includes(response.status),
+        )
+        .map((response: any) => (
+          <details className="tool-step" key={`response-${response.round}`}>
+            <summary>
+              {response.status === "interrupted"
+                ? "Unfinished response"
+                : "Intermediate response"}
+              <small>Request {response.round}</small>
+            </summary>
+            <p className="message-plain">{response.content}</p>
+          </details>
+        ))}
     </details>
   );
 }

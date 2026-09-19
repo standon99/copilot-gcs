@@ -53,20 +53,31 @@ Use **AI planning** in the main bar, check the target vehicles, and write in the
 
 Requested waypoint changes revise local drafts, with before/after inspection and undo. The model can read, edit, check the results and continue in one turn through the
 [documented tools](ai-interface.md). Your messages appear on the right, replies
-on the left. A **Waiting for reply…** bubble shows animated dots, the model,
-elapsed time and **Stop** while a request is running. Replies arrive when the
-turn finishes; the dots do not represent streamed model output. Scroll up to
-read earlier messages without being pulled back to the bottom.
+on the left. The reply bubble streams text as it arrives and shows the current
+stage, such as **Thinking…**, **Writing reply…** or **Checking the mission…**,
+with the model, elapsed time and **Stop**. Expand **Thinking** to see reasoning
+text the provider explicitly returns; this section appears only when available.
+It remains available with the completed or stopped reply. Scroll up to read
+earlier messages without being pulled back to the bottom.
 
 Expand **Activity details** while waiting or **Reply details** afterward to
-inspect tool calls and request counts. A maximum of 12 calls means a usage
+inspect tool calls, intermediate/unfinished responses and request counts. A maximum of 12 calls means a usage
 limit, not 12 steps the model must complete; these counters stay out of the main
 conversation. Settings controls the limit.
 The application stages the complete turn before changing drafts. An unselected
 target, reboot, concurrent edit, failed request or exhausted/cancelled turn
 rejects staged changes. **Stop** requests cancellation, then a stopped message
 replaces the waiting bubble. Reloading the page retains an active reply's waiting
-indicator; switching vehicles shows that vehicle's conversation.
+indicator, partial text and Thinking; switching vehicles shows that vehicle's
+conversation. Streamed text is provisional until the turn finishes its checks.
+If a turn fails or stops, unfinished text moves into Reply details and the error
+is shown in the conversation. Thinking text is retained in local chat/audit data.
+
+Streaming uses the existing OpenAI-compatible endpoint. Models that do not
+return thinking simply stream their answer. An endpoint that returns one JSON
+reply instead is displayed on arrival, without making a second request.
+Streaming does not raise token/call limits or request extra thinking effort.
+Automatic assessments and connection tests still return complete responses.
 
 Parameter requests create cards containing vehicle, exact parameter, old/new values and reason. **Enable vehicle controls → Apply to [ID]** writes to a disarmed owned simulator and verifies readback. Proposals expire after five minutes and are invalid after reboot or conflicting changes. A failed batch stops; earlier verified writes remain applied and are recorded in its results.
 

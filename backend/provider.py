@@ -105,15 +105,23 @@ class Provider:
         )
         return (result["models"] if operation == "models" else decode_json(result["content"])), meta
 
-    async def tool_turn(self, system, messages, tools, options):
-        result, meta = await self.request(system, messages, options, operation="tools", tools=tools)
+    async def tool_turn(self, system, messages, tools, options, on_event=None):
+        result, meta = await self.request(
+            system, messages, options, operation="tools", tools=tools, on_event=on_event
+        )
         if result.get("finish_reason") == "length":
             raise ValueError(
                 "Model output token limit reached. Narrow the request or adjust Output tokens per chat call in Settings."
             )
+        if result.get("finish_reason") == "content_filter":
+            raise ValueError("Provider stopped this response; no turn changes applied")
         return result["message"], meta
 
-    async def request(self, system, messages, options, monitor=False, operation="chat", tools=None):
+    async def request(
+        self, system, messages, options, monitor=False, operation="chat", tools=None, on_event=None
+    ):
+        if on_event:
+            on_event({"event": "phase", "phase": "queued"})
         if has_image(messages):
             caps = await self.model_capabilities(options)
             if caps["vision"] is False:
@@ -148,6 +156,7 @@ class Provider:
                 stderr=asyncio.subprocess.PIPE,
                 cwd="/tmp",
                 env=env,
+                limit=4 * 1024 * 1024,
             )
             request = {
                 "base_url": options["base_url"],
@@ -157,24 +166,37 @@ class Provider:
                 "timeout": timeout,
                 "messages": messages,
                 "tools": tools,
+                "stream": operation == "tools",
                 "max_tokens": options.get("agent_max_tokens", 2500)
                 if operation == "tools"
                 else 3500,
             }
             started = time.time()
+            if on_event:
+                on_event({"event": "phase", "phase": "waiting"})
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(json.dumps(request).encode()), timeout + 5
-                )
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                proc.kill()
+                if operation == "tools":
+                    result = await asyncio.wait_for(
+                        self.read_worker(proc, request, on_event), timeout + 5
+                    )
+                else:
+                    stdout, _ = await asyncio.wait_for(
+                        proc.communicate(json.dumps(request).encode()), timeout + 5
+                    )
+                    result = json.loads(stdout)
+            except BaseException as exc:
+                if proc.returncode is None:
+                    proc.kill()
                 await proc.wait()
+                if isinstance(exc, asyncio.TimeoutError):
+                    raise RuntimeError(
+                        f"Model request exceeded the {timeout}-second timeout; adjust Inference timeout in Settings if needed"
+                    ) from exc
                 raise
             if proc.returncode:
                 raise RuntimeError(
                     "Isolated inference worker failed to start or exited unexpectedly"
                 )
-            result = json.loads(stdout)
             if "error" in result:
                 raise RuntimeError(result["error"])
             return result, {
@@ -185,7 +207,52 @@ class Provider:
                 "settings_revision": options["revision"],
                 "endpoint": options["base_url"],
                 "prompt_sha256": hashlib.sha256(system.encode()).hexdigest(),
+                "streamed": result.get("streamed", False),
             }
+
+    @staticmethod
+    async def read_worker(proc, request, on_event):
+        """Drain events while the isolated worker runs; no tools execute here."""
+
+        async def drain_errors():
+            while await proc.stderr.read(4096):
+                pass  # Never surface raw subprocess/provider output.
+
+        errors = asyncio.create_task(drain_errors())
+        try:
+            proc.stdin.write(json.dumps(request).encode())
+            await proc.stdin.drain()
+            proc.stdin.close()
+            result = None
+            size = 0
+            async for line in proc.stdout:
+                size += len(line)
+                if size > 8 * 1024 * 1024:
+                    raise RuntimeError("Inference worker output exceeded the size limit")
+                data = json.loads(line)
+                if not isinstance(data, dict) or result is not None:
+                    raise RuntimeError("Invalid inference worker response")
+                if data.get("event") == "delta":
+                    if data.get("field") not in ("content", "thinking") or not isinstance(
+                        data.get("text"), str
+                    ):
+                        raise RuntimeError("Invalid inference worker text event")
+                    if on_event:
+                        on_event(data)
+                elif data.get("event") == "phase" and data.get("phase") == "receiving_tools":
+                    if on_event:
+                        on_event(data)
+                elif "event" not in data:
+                    result = data
+                else:
+                    raise RuntimeError("Invalid inference worker event")
+            await proc.wait()
+            if result is None:
+                raise RuntimeError("Inference worker ended without a complete response")
+            return result
+        finally:
+            errors.cancel()
+            await asyncio.gather(errors, return_exceptions=True)
 
     async def monitor(self, observations):
         options = self.settings.get()

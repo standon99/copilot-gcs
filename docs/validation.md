@@ -1,5 +1,46 @@
 # Validation record
 
+## Streaming chat and Thinking — 2026-09-19
+
+Iteration based on c86e177. **203 Python tests and 22 frontend tests passed**,
+with Ruff, formatting and the production TypeScript/Vite build. Vite retains its
+bundle-size advisory. New checks cover streamed tool fragments, Ollama's reused
+tool indexes, explicit thinking fields, UTF-8 boundaries, text/transport bounds,
+dropped streams, sanitized errors, token limits, JSON fallback without retries,
+progress before completion, subprocess cancellation/deadlines, reasoning replay,
+per-round UI state and rejection of staged edits after a stream failure.
+
+Chrome verification used an isolated runtime with automatic inference off and
+a disarmed app-owned Copter. Four Qwen turns attempted **seven model requests**
+in total. The first streamed thinking but merged two complete tool calls that
+reused index zero; its following request failed with HTTP 400. Nothing applied.
+The corrected assembler recognizes separate complete calls with distinct IDs,
+retains ordinary indexed fragments and rejects ambiguous duplicates.
+
+Two subsequent read-only turns completed in **18.07 s** and **15.83 s**, each
+using two requests, with four and one successful tools respectively. They
+reported **13,869** and **13,634** tokens. Thinking arrived before tool execution;
+answer text grew through multiple observed updates before completion. Reload
+restored an active Writing reply state. That turn finished before the attempted
+Stop; a final request was deliberately stopped during Thinking after reload,
+ending cancelled at **2.89 s**, before any tool executed. Usage for the failed
+and cancelled turns is unavailable. No additional requests were made by the
+streaming transport itself.
+
+The test draft remained version zero with no waypoints, watches, parameter or
+fence proposals; no flight/write commands were issued. Actual inspected captures
+are in the [gallery](screenshots/README.md). README, usage, AI interface,
+implementation, development and screenshot documentation were updated. Setup,
+product and the broader design/feasibility baselines were checked and remain
+accurate for this change. Native flight, automatic-assessment campaigns and
+other providers were not exercised live; local response fixtures cover buffered
+fallback and error/cancellation cases.
+
+The test server and simulator were stopped. The user application was restarted
+with exact saved preferences, both drafts, **26 chat entries**, spatial context,
+watches/proposals and per-vehicle monitoring settings preserved. Both restored
+sessions were disarmed with fresh telemetry; session IDs and control leases reset.
+
 ## Numeric inference settings — 2026-09-19
 
 Fixed clearing a numeric Settings field immediately inserting `0`. Empty edits
