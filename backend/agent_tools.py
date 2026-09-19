@@ -12,6 +12,18 @@ from .interaction import ParameterProposal, parameter_context
 from .metadata import validate_parameter
 from .monitoring import Monitoring, effective_monitoring, monitor_config
 from .planning import Waypoint, apply_patch, check
+from .spatial import (
+    FeatureInput,
+    MetricFence,
+    construct_metric_fence,
+    measure_polygon,
+    merge_features,
+    nearby_features,
+    record_feature,
+    render_preview,
+    state_for,
+    vehicle_context,
+)
 from .watches import METRICS, WatchRule
 
 
@@ -23,6 +35,35 @@ class Args(BaseModel):
 class MissionRead(Args):
     offset: int = Field(default=0, ge=0, le=500)
     limit: int = Field(default=100, ge=1, le=100)
+
+
+class VehicleRead(Args):
+    include_evidence: bool = False
+
+
+class FeatureRead(Args):
+    radius_m: int = Field(default=1500, ge=100, le=3000)
+    load_nearby: bool = True
+
+
+class TraceFeature(Args, FeatureInput):
+    pass
+
+
+class BuildMetricFence(Args, MetricFence):
+    pass
+
+
+class SpatialBrief(Args):
+    kind: Literal["inclusion", "exclusion"] | None = None
+    width_m: float | None = Field(default=None, ge=10, le=5000, allow_inf_nan=False)
+    length_m: float | None = Field(default=None, ge=10, le=5000, allow_inf_nan=False)
+    shape: Literal["rectangle", "road_following"] | None = None
+    road_id: str | None = Field(default=None, max_length=100)
+    side: Literal["west", "east", "north", "south"] | None = None
+    contain_feature_ids: list[str] | None = Field(default=None, max_length=10)
+    requirements: list[str] | None = Field(default=None, max_length=10)
+    unresolved: list[str] | None = Field(default=None, max_length=10)
 
 
 class Fields(BaseModel):
@@ -118,8 +159,43 @@ class ConfigureMonitoring(Args):
 
 TOOLS = {
     "get_vehicle_state": (
+        VehicleRead,
+        "Read current selected-vehicle telemetry. Compact by default; set include_evidence=true only when historical samples are needed. No simulator truth.",
+        False,
+    ),
+    "get_spatial_context": (
         Args,
-        "Read current selected-vehicle telemetry and recent evidence. No simulator truth.",
+        "Read fresh position (distinct from home), heading, map/image availability, metric scale, saved spatial brief and operator-selected features. Read facts before asking the operator.",
+        False,
+    ),
+    "get_map_features": (
+        FeatureRead,
+        "Read mapped roads/airstrips with feature IDs and geometry. load_nearby=true queries a fixed map service near the fresh vehicle position; false reads existing mapped/operator/model traces. Road lines are centrelines, not edges. Missing features remain unknown.",
+        False,
+    ),
+    "trace_map_feature": (
+        TraceFeature,
+        "Record an UNVERIFIED road/airstrip/area trace from the shared image using map_pixels or geographic coordinates. For missing vector outlines. Does not create a fence. Label uncertainty accurately.",
+        True,
+    ),
+    "update_spatial_brief": (
+        SpatialBrief,
+        "Remember operator-stated dimensions, road side, containment requirements and unresolved choices across turns. Omitted fields are preserved. Do NOT infer inclusion/exclusion from 'airstrip inside'; ask if unspecified.",
+        True,
+    ),
+    "build_metric_geofence": (
+        BuildMetricFence,
+        "Construct a geofence preview in metres: rectangle or curved road-following strip. Requires explicit fence kind and contain_feature_ids. Center on a feature, coordinate or fresh vehicle. For roads, side and clearance_m are required (0 allowed, measured to mapped line). If areas exist, supply replace_index to revise one; append=true only when the operator wants an additional area. Returns containment/dimensions; does not silently enlarge to fit. Render the preview when an image is shared.",
+        True,
+    ),
+    "get_geofence_proposal": (
+        Args,
+        "Read the current pending geofence geometry and numerical measurements, including a preview from an earlier turn. No acceptance or upload.",
+        False,
+    ),
+    "render_spatial_preview": (
+        Args,
+        "Return a fresh overlay IMAGE of mapped features and the pending fence on the operator-shared map, for visual inspection and correction. No new tile fetch. At most 3 renders/turn. If no image is shared, ask the operator to turn on Share map.",
         False,
     ),
     "get_mission": (
@@ -241,6 +317,9 @@ class WorkspaceTurn:
         self.before = {}
         self.working = {}
         self.validated = {}
+        self.pending_images = []
+        self.render_count = 0
+        self.visual_reviewed = {}
         for vid in ids:
             v = live[vid]
             self.before[vid] = {
@@ -249,6 +328,8 @@ class WorkspaceTurn:
                 "draft": copy.deepcopy(v.draft),
                 "watch_revision": v.watches.revision,
                 "monitor_revision": monitor_config(v).revision,
+                "spatial_revision": state_for(v)["revision"],
+                "fence": copy.deepcopy(getattr(v, "geofence_proposal", None)),
             }
             self.working[vid] = {
                 "draft": copy.deepcopy(v.draft),
@@ -258,7 +339,27 @@ class WorkspaceTurn:
                 "catalog": {},
                 "fence": None,
                 "operations": [],
+                "spatial": state_for(v),
+                "spatial_dirty": False,
+                "fence_dirty": False,
             }
+            prior = getattr(v, "geofence_proposal", None)
+            if (
+                prior
+                and prior.get("base_revision") == v.draft["revision"]
+                and prior.get("epoch") == v.telemetry.epoch
+            ):
+                self.working[vid]["fence"] = {
+                    k: copy.deepcopy(prior[k])
+                    for k in (
+                        "exclusions",
+                        "inclusions",
+                        "inclusion_mode",
+                        "reason",
+                        "spatial_checks",
+                    )
+                    if k in prior
+                }
 
     def guard(self):
         for vid, b in self.before.items():
@@ -271,6 +372,8 @@ class WorkspaceTurn:
                 v.draft["revision"] != b["draft"]["revision"]
                 or v.watches.revision != b["watch_revision"]
                 or monitor_config(v).revision != b["monitor_revision"]
+                or state_for(v)["revision"] != b["spatial_revision"]
+                or getattr(v, "geofence_proposal", None) != b["fence"]
             ):
                 raise TurnConflict("Workspace changed during this turn; no turn changes applied")
             for p in self.working[vid]["parameters"].values():
@@ -287,6 +390,40 @@ class WorkspaceTurn:
             if w["operations"] and self.validated.get(vid) != w["draft"]["revision"]
         ]
 
+    def needs_visual_review(self):
+        return [
+            vid
+            for vid, w in self.working.items()
+            if w["fence_dirty"]
+            and self.map_image
+            and self.map_image.vehicle_id == vid
+            and self.visual_reviewed.get(vid) != w["fence"]
+        ]
+
+    async def execute_async(self, name, arguments):
+        if name != "get_map_features":
+            return self.execute(name, arguments)
+        self.guard()
+        a = FeatureRead.model_validate(arguments)
+        if a.vehicle_id not in self.ids:
+            raise ValueError("Tool targets an unselected vehicle")
+        v, w = self.live[a.vehicle_id], self.working[a.vehicle_id]
+        if a.load_nearby:
+            context = vehicle_context(v, self.map_image)
+            p = context["current_position"]
+            if not p:
+                raise ValueError(
+                    "Fresh aircraft position unavailable; read existing features or select a known map location"
+                )
+            try:
+                loaded = await nearby_features((p["lon"], p["lat"]), a.radius_m)
+                self.guard()
+                merge_features(w["spatial"], loaded)
+                w["spatial_dirty"] = True
+            except ValueError as exc:
+                return {**w["spatial"], "lookup_error": str(exc)}
+        return w["spatial"]
+
     def execute(self, name, arguments):
         self.guard()
         if name not in TOOLS or (self.read_only and TOOLS[name][2]):
@@ -296,9 +433,98 @@ class WorkspaceTurn:
             raise ValueError("Tool targets an unselected vehicle")
         v, w = self.live[a.vehicle_id], self.working[a.vehicle_id]
         if name == "get_vehicle_state":
+            result = {"state": v.telemetry.snapshot()}
+            if a.include_evidence:
+                result["observations"] = v.telemetry.observations(v.active, "operational")
+            return result
+        if name == "get_spatial_context":
             return {
-                "state": v.telemetry.snapshot(),
-                "observations": v.telemetry.observations(v.active, "operational"),
+                **vehicle_context(v, self.map_image),
+                "spatial": w["spatial"],
+                "pending_fence": w["fence"],
+            }
+        if name == "update_spatial_brief":
+            patch = a.model_dump(exclude_none=True, exclude={"vehicle_id"})
+            if any(
+                len(text) > 500
+                for key in ("requirements", "unresolved")
+                for text in patch.get(key, [])
+            ):
+                raise ValueError("Each spatial requirement is limited to 500 characters")
+            w["spatial"]["brief"].update(patch)
+            w["spatial_dirty"] = True
+            return {"brief": w["spatial"]["brief"], "status": "staged until turn completion"}
+        if name == "trace_map_feature":
+            image = self.map_image if self.map_image and self.map_image.vehicle_id == v.id else None
+            f = record_feature(a, "model_trace", image)
+            features = [x for x in w["spatial"]["features"] if x["id"] != f["id"]]
+            if len(features) >= 50:
+                raise ValueError("At most 50 map features per vehicle")
+            w["spatial"]["features"] = [*features, f]
+            w["spatial_dirty"] = True
+            return f
+        if name == "build_metric_geofence":
+            base = w["fence"] or w["draft"]["intent"]
+            rings = copy.deepcopy(base[a.kind + "s"])
+            if rings and a.replace_index is None and not a.append:
+                raise ValueError(
+                    f"There are already {len(rings)} {a.kind} areas. Supply replace_index to revise one; use append=true only for an explicitly requested additional area. Read get_geofence_proposal if needed."
+                )
+            saved_ids = w["spatial"]["brief"].get("contain_feature_ids", [])
+            if not set(saved_ids) <= set(a.contain_feature_ids):
+                raise ValueError(
+                    "Preserve saved containment requirements, or update the spatial brief if the operator changed them"
+                )
+            p = vehicle_context(v)["current_position"]
+            ring, measurements = construct_metric_fence(
+                a, w["spatial"]["features"], (p["lon"], p["lat"]) if p else None
+            )
+            index = a.replace_index
+            if index is None:
+                index = len(rings)
+                rings.append(ring)
+            elif index >= len(rings):
+                raise ValueError("replace_index does not identify an existing proposed area")
+            else:
+                rings[index] = ring
+            result = self.execute(
+                "propose_geofence",
+                {"vehicle_id": v.id, "kind": a.kind, "reason": a.reason, "polygons": rings},
+            )
+            w["fence"]["spatial_checks"] = measurements
+            w["spatial"]["brief"].update(
+                a.model_dump(
+                    exclude_none=True,
+                    exclude={"vehicle_id", "replace_index", "append", "reason"},
+                )
+            )
+            w["spatial_dirty"] = True
+            return {**result, "replace_index": index, "measurements": measurements}
+        if name == "get_geofence_proposal":
+            return {
+                "proposal": w["fence"],
+                "measurements": {
+                    kind: [measure_polygon(ring) for ring in (w["fence"] or {}).get(kind, [])]
+                    for kind in ("inclusions", "exclusions")
+                },
+            }
+        if name == "render_spatial_preview":
+            if self.map_image is None or self.map_image.vehicle_id != v.id:
+                raise ValueError(
+                    "No map image shared for this vehicle in this turn; enable Share map"
+                )
+            if self.render_count >= 3:
+                raise ValueError(
+                    "At most 3 preview images per turn; inspect the last preview or narrow the request"
+                )
+            image, info = render_preview(self.map_image, w["spatial"]["features"], w["fence"])
+            self.render_count += 1
+            self.pending_images.append({"image": image, "context": info})
+            self.visual_reviewed[v.id] = copy.deepcopy(w["fence"])
+            return {
+                **info,
+                "preview_number": self.render_count,
+                "delivery": "Overlay image follows the tool results in this same turn",
             }
         if name == "get_mission":
             return {
@@ -372,6 +598,10 @@ class WorkspaceTurn:
                 "parameters": list(proposed.values()),
             }
         if name == "propose_geofence":
+            if a.coordinate_space == "map_pixels" and (
+                self.map_image is None or self.map_image.vehicle_id != v.id
+            ):
+                raise ValueError("Pixel geometry must target the vehicle whose map was shared")
             resolved = ExclusionProposal.model_validate(
                 a.model_dump(include={"reason", "coordinate_space", "polygons"})
             ).resolve(self.map_image)
@@ -382,6 +612,8 @@ class WorkspaceTurn:
                 }
             w["fence"][a.kind + "s"] = resolved["polygons"]
             w["fence"]["reason"] = resolved["reason"]
+            w["fence"].pop("spatial_checks", None)
+            w["fence_dirty"] = True
             if a.kind == "inclusion" and a.inclusion_mode is not None:
                 w["fence"]["inclusion_mode"] = a.inclusion_mode
             proposed = copy.deepcopy(w["draft"])

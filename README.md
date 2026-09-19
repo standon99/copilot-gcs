@@ -4,15 +4,15 @@
 
 A web ground control station for ArduPilot **Copter, Plane and Rover**, with an integrated AI chat.
 
-![Copilot GCS waiting for a real model reply beside a simulated vehicle](docs/screenshots/chat-waiting.jpg)
+![Copilot GCS showing two simulated aircraft above 3D terrain](docs/screenshots/terrain.jpg)
 
 ## Features
 
 - **AI chat:** message bubbles, a visible waiting reply and Stop; multi-step tools read, edit and check missions, with expandable details.
-- **Flight workspace:** map, instruments and flight controls; separate Chat, Alerts and Watch rules panels.
+- **Flight workspace:** 2D/3D terrain map with aircraft at their reported altitude, instruments and flight controls; separate Chat, Alerts and Watch rules.
 - **Planning:** waypoint editing, drawn inclusion/exclusion areas and verified fence upload; parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.
-- **Vision support:** attach the map to propose boundaries; Settings shows image/tool compatibility. [AI interface](docs/ai-interface.md).
+- **Spatial planning:** share a fresh map with each message, select or trace roads/airstrips, and build measured boundaries with visual feedback. [AI interface](docs/ai-interface.md).
 - **Your model and usage:** Ollama cloud or a local endpoint; saved prompts, per-vehicle monitoring and a shared automatic request limit.
 - **Visible watch rules:** describe extra concerns in chat; visible checks turn red and can prompt AI even with periodic monitoring off. Rehearse failures in Diagnostics.
 

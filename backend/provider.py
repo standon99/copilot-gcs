@@ -108,7 +108,9 @@ class Provider:
     async def tool_turn(self, system, messages, tools, options):
         result, meta = await self.request(system, messages, options, operation="tools", tools=tools)
         if result.get("finish_reason") == "length":
-            raise ValueError("Model output token limit reached; no turn changes applied")
+            raise ValueError(
+                "Model output token limit reached. Narrow the request or adjust Output tokens per chat call in Settings."
+            )
         return result["message"], meta
 
     async def request(self, system, messages, options, monitor=False, operation="chat", tools=None):

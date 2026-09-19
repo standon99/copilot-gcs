@@ -97,9 +97,12 @@ The catalog lives at /api/ai/capabilities and derives its argument schemas from
 the live validators. Geographic or map-pixel proposals create no draft change
 until acceptance checks the proposal ID, draft revision and boot epoch.
 
-Map images are operator-attached PNGs only, bounded in dimensions/size, stamped
-with draft/vehicle/time and Web Mercator bounds. The browser resets bearing/tilt,
-adds pixel coordinates and attribution, and exposes a thumbnail before sending.
+Map images are operator-shared PNGs only, bounded in dimensions/size, stamped
+with draft/vehicle/time and Web Mercator bounds. Share map captures a fresh image
+with each chat message while enabled. The browser temporarily resets bearing/tilt
+and terrain, waits for tiles, adds aircraft/home/waypoint annotations, a metric
+scale, pixel coordinates and attribution, then restores the camera. The sent
+message confirms its image dimensions/time; the last capture can be expanded.
 The server converts pixel polygons and rejects invalid geometry. Settings and
 Chat check optional Ollama model metadata on the configured origin; known
 text-only models cannot send map attachments, and vision models without tools
@@ -109,6 +112,26 @@ messages, without reflecting provider bodies. Metadata caches are scoped to
 endpoint/model, with bounded timeouts and no inference. Models without vision
 can use geographic coordinates; no model is selected automatically.
 Only planning receives the attachment; monitoring/trials are unchanged.
+
+The v3 spatial tools provide live position versus home, bounded OSM feature lookup,
+manual/model traces, session-local requirements, pending-proposal reads, metre-based
+construction and Pillow overlays returned as images in the same native tool loop.
+Geometry uses pyproj local WGS84 projection and Shapely; measurements use geodesic
+edge lengths and area. Source uncertainty is retained, including unknown road
+edges and full runway outlines. Known requested-feature containment failures and
+road crossings prevent accepting the preview. See [spatial planning](spatial-planning.md)
+for bounds and unresolved cases. Spatial revisions and pending-proposal identity
+participate in concurrent-edit guards. Reading a prior preview does not replace it.
+
+The map defaults to 2D. Wheel/trackpad vertical scroll tilts 0–65 degrees; pinch
+and zoom buttons retain zoom. A 3D/2D toggle and Fit aircraft are also available.
+MapLibre loads public Mapzen/AWS Terrarium DEM tiles on demand at exaggeration 1.
+A WebGL aircraft layer projects fresh AMSL positions above the mapped ground,
+with vertical reference lines and clickable labels. Missing elevation tiles do
+not become sea-level ground. Fit considers height as well as geographic bounds;
+automatic framing zooms out when aircraft approach the viewport edge, until a
+manual pan pauses it. This browser terrain layer does not feed the autopilot,
+watch AGL estimates or mission validation. Satellite/DEM providers require network.
 
 Fence-bank download and upload use MAV_MISSION_TYPE_FENCE=1; regular missions
 remain type 0. Request, item and ACK matching is type-specific; fence item zero
@@ -176,8 +199,9 @@ range and not marked invalid, with fresh ATTITUDE and roll/pitch within 20°; th
 beam is projected vertically. Otherwise it uses AMSL minus fresh terrain height
 only when TERRAIN_REPORT has nonzero spacing and its coordinates are within
 min(30 m, half the grid spacing) of the vehicle estimate. Missing/nonfinite/stale
-inputs return unknown. No relative-home fallback or terrain download service is
-provided. Ground-surface estimates do not establish obstacle clearance.
+inputs return unknown. No relative-home fallback or autopilot terrain download
+service is provided; browser terrain tiles are separate. Ground-surface estimates
+do not establish obstacle clearance.
 
 All custom context and event-driven cadence are disabled during Diagnostics
 trials; the default Settings cadence and hard cap apply, then the previous

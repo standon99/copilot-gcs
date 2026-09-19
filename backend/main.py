@@ -40,6 +40,15 @@ from .navigation import navigation_cue
 from .planning import Draft, Intent, check, revise
 from .provider import Provider, sandbox_command
 from .settings import DEFAULT_PROMPTS, Preferences, credential_for, settings
+from .spatial import (
+    FeatureInput,
+    merge_features,
+    nearby_features,
+    proposal_issues,
+    record_feature,
+    state_for,
+    vehicle_context,
+)
 from .store import Store
 from .telemetry import Telemetry, finite
 from .watches import METRICS, WatchBook, WatchRule, add_watch_context
@@ -495,7 +504,7 @@ async def local_security(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* https://*.arcgisonline.com https://*.openstreetmap.org; worker-src 'self' blob:; frame-ancestors 'none'"
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* https://*.arcgisonline.com https://*.openstreetmap.org https://s3.amazonaws.com; worker-src 'self' blob:; frame-ancestors 'none'"
     )
     return response
 
@@ -771,6 +780,7 @@ async def workspace(vid: str):
         "intent_proposal": v.intent_proposal,
         "geofence_proposal": getattr(v, "geofence_proposal", None),
         "parameter_proposals": v.parameter_proposals,
+        "spatial": state_for(v),
         "watches": v.watches.public(),
         "review_current": review_current(v),
         "agent_run": public_run(getattr(v, "agent_run", None)),
@@ -1200,6 +1210,60 @@ class Interaction(BaseModel):
     read_only: bool = False
 
 
+class SpatialEdit(BaseModel):
+    expected_revision: int
+    selected_ids: list[str] | None = Field(default=None, max_length=10)
+    feature: FeatureInput | None = None
+
+
+@app.post("/api/vehicles/{vid}/spatial/features")
+async def load_spatial_features(vid: str):
+    v = vehicle(vid)
+    before = state_for(v)
+    p = vehicle_context(v)["current_position"]
+    if not p:
+        raise HTTPException(409, "Wait for fresh vehicle position before loading nearby features")
+    try:
+        result = await nearby_features((p["lon"], p["lat"]))
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    if state_for(v)["revision"] != before["revision"] or vehicles.get(vid) is not v or v.closed:
+        raise HTTPException(409, "Spatial context changed during lookup; retry")
+    merge_features(before, result)
+    before["revision"] += 1
+    v.spatial = before
+    return await workspace(vid)
+
+
+@app.put("/api/vehicles/{vid}/spatial")
+async def edit_spatial(vid: str, body: SpatialEdit):
+    v = vehicle(vid)
+    state = state_for(v)
+    if state["revision"] != body.expected_revision:
+        raise HTTPException(409, "Map feature selection changed; refresh")
+    if body.feature:
+        if body.feature.coordinate_space != "geographic":
+            raise HTTPException(422, "Manual traces use geographic coordinates")
+        try:
+            f = record_feature(body.feature, "operator_trace")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        state["features"] = [x for x in state["features"] if x["id"] != f["id"]]
+        if len(state["features"]) >= 50:
+            raise HTTPException(422, "At most 50 map features")
+        state["features"].append(f)
+        state["selected_ids"] = [f["id"]]
+    if body.selected_ids is not None:
+        ids = {f["id"] for f in state["features"]}
+        if not set(body.selected_ids) <= ids:
+            raise HTTPException(422, "Select only loaded map features")
+        state["selected_ids"] = list(dict.fromkeys(body.selected_ids))
+    state["revision"] += 1
+    v.spatial = state
+    event(vid, "spatial_context", state)
+    return await workspace(vid)
+
+
 @app.get("/api/ai/capabilities")
 async def ai_capabilities():
     return {**capabilities(), "contract": CONTRACT}
@@ -1257,7 +1321,15 @@ async def interaction(body: Interaction):
     for v in selected:
         v.agent_run, v.agent_task = run, asyncio.current_task()
         v.chat.append(
-            {"role": "user", "text": body.message, "ts": time.time(), "targets": body.targets}
+            {
+                "role": "user",
+                "text": body.message,
+                "ts": time.time(),
+                "targets": body.targets,
+                "map_context": body.map_image.context()
+                if body.map_image and body.map_image.vehicle_id == v.id
+                else None,
+            }
         )
 
     def guard_settings():
@@ -1275,6 +1347,11 @@ async def interaction(body: Interaction):
                 "home": v.telemetry.snapshot()["home"],
                 "draft_revision": v.draft["revision"],
                 "waypoint_count": len(v.draft["waypoints"]),
+                "spatial_context": vehicle_context(v, body.map_image),
+                "spatial_brief": state_for(v)["brief"],
+                "selected_map_features": [
+                    f for f in state_for(v)["features"] if f["id"] in state_for(v)["selected_ids"]
+                ],
                 "previous_messages": [
                     {"role": m["role"], "text": m["text"][:3000]} for m in v.chat[-7:-1]
                 ],
@@ -1341,9 +1418,14 @@ async def interaction(body: Interaction):
                 event(
                     v.id, "monitoring_configured_by_tools", effective_monitoring(v, settings.value)
                 )
-            if w["fence"] is not None:
+            if w["spatial_dirty"]:
+                w["spatial"]["revision"] += 1
+                v.spatial = w["spatial"]
+                event(v.id, "spatial_context", v.spatial)
+            if w["fence_dirty"]:
                 v.geofence_proposal = {
                     **w["fence"],
+                    "spatial_issues": proposal_issues(w["fence"]),
                     "id": uuid.uuid4().hex,
                     "base_revision": v.draft["revision"],
                     "epoch": v.telemetry.epoch,
@@ -1420,6 +1502,8 @@ async def accept_exclusions(vid: str, operation: str, body: dict):
     if operation == "accept":
         if p["base_revision"] != v.draft["revision"] or p["epoch"] != v.telemetry.epoch:
             raise HTTPException(409, "Geofence proposal is stale; ask Copilot to propose it again")
+        if issues := proposal_issues(p):
+            raise HTTPException(422, "; ".join(issues) + ". Revise the proposal before accepting.")
         d = copy.deepcopy(v.draft)
         for key in ("exclusions", "inclusions", "inclusion_mode"):
             d["intent"][key] = p[key]

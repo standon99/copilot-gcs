@@ -1,5 +1,27 @@
 # Actual application screenshots
 
+The spatial/terrain update based on **414a82e** added **terrain.jpg** and
+**spatial-tools.jpg** on 2026-09-19, from the production page in Chrome on port
+8091 with an isolated runtime and automatic inference off.
+
+- **terrain.jpg:** two real app-owned Copters hovering at 100 m and 60 m above
+  home, shown at reported AMSL above mapped terrain. Both subsequently landed
+  and disarmed. The purple area is the first metric preview, never accepted.
+- **spatial-tools.jpg:** mapped feature selection, saved-image thumbnail and the
+  actual Qwen follow-up reply. Its pending test proposal had been dismissed;
+  the thumbnail retains the earlier map sent to the model. Full airstrip extent
+  remains unknown. The live turns exposed two tool-contract issues subsequently
+  guarded in code; see [validation](../validation.md).
+
+These are unmodified 1796 × 1043 browser captures, inspected for layout,
+attribution and secrets. No generated mockups or fabricated model responses.
+
+![Two aircraft above terrain](terrain.jpg)
+
+![Map features and the image shared with Copilot](spatial-tools.jpg)
+
+## Previous chat captures
+
 The chat update based on **3fc210a** added **chat-waiting.jpg** and **chat.jpg**
 on 2026-09-18, using the production page on port 8091 and an isolated disarmed
 Copter runtime. The waiting image shows a real `qwen3.5:397b` request in progress;

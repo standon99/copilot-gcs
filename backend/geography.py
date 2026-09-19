@@ -35,6 +35,26 @@ def validate_polygons(polygons):
     return result
 
 
+class MapAnnotation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["aircraft", "home", "waypoint"]
+    label: str = Field(max_length=100)
+    coordinates: tuple[float, float]
+    pixel: tuple[float, float]
+    in_view: bool
+    heading_deg: float | None = Field(default=None, allow_inf_nan=False)
+    age_s: float | None = Field(default=None, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def valid(self):
+        lon, lat = self.coordinates
+        if not (-180 <= lon <= 180 and -85 <= lat <= 85):
+            raise ValueError("Annotation coordinates must be finite geographic coordinates")
+        if not all(math.isfinite(n) for n in self.pixel):
+            raise ValueError("Annotation pixels must be finite")
+        return self
+
+
 class MapImage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vehicle_id: str
@@ -45,6 +65,7 @@ class MapImage(BaseModel):
     height: int = Field(ge=64, le=1600)
     # North-up, zero-pitch Web Mercator; bounds are west, south, east, north.
     bounds: tuple[float, float, float, float]
+    annotations: list[MapAnnotation] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def valid(self):
@@ -68,12 +89,26 @@ class MapImage(BaseModel):
         return self
 
     def context(self):
+        from .spatial import map_metrics
+
         return {
             **self.model_dump(exclude={"image"}),
             "projection": "Web Mercator, north-up, zero pitch",
             "pixel_origin": "top left; x right, y down; use image pixels, not screen pixels",
             "sha256": hashlib.sha256(self.image.encode()).hexdigest(),
+            "metric_scale": map_metrics(self),
+            "imagery_date": None,
         }
+
+    def pixel(self, point):
+        lon, lat = point
+        west, south, east, north = self.bounds
+        top = math.asinh(math.tan(math.radians(north)))
+        bottom = math.asinh(math.tan(math.radians(south)))
+        return (
+            (lon - west) / (east - west) * self.width,
+            (math.asinh(math.tan(math.radians(lat))) - top) / (bottom - top) * self.height,
+        )
 
     def geographic(self, point):
         x, y = point

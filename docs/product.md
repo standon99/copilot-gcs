@@ -32,7 +32,9 @@ AI uses a bounded tool loop to read, edit and check drafts, propose parameters
 and either fence type, and configure requested advisory watches and monitoring.
 Settings owns the shared automatic request limit. The name, connection symbol
 and selected model share a compact pill in the vehicle bar.
-The operator applies onboard changes and controls flight. Vision input is an
-explicit map attachment, not a continuous image feed. See the
+The operator applies onboard changes and controls flight. **Share map** includes
+a fresh map with each message while enabled. Feature selection/tracing, metre-based
+construction and visual feedback support spatial planning. The map starts in 2D
+and tilts into terrain with aircraft displayed at reported altitude. See the
 [AI interface](ai-interface.md), [usage](usage.md), [implementation](implementation.md)
 and [validation](validation.md).

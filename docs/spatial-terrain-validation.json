@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-19",
+  "base_commit": "414a82e",
+  "environment": "macOS Apple Silicon, Chrome production build, isolated app-owned Copter SITL",
+  "automated_checks": {"python_passed": 182, "frontend_passed": 20, "final_affected_python_passed": 33},
+  "automatic_inference": false,
+  "live_model": "qwen3.5:397b",
+  "model_calls_attempted": 9,
+  "turns": [
+    {"calls": 2, "max_output_tokens": 2500, "result": "output token limit; no changes applied", "usage_total": null},
+    {"calls": 3, "tools": 3, "max_output_tokens": 4096, "latency_s": 98.7, "usage_total": 33171, "result": "metric fence and visual feedback; omitted containment IDs detected"},
+    {"calls": 4, "tools": 4, "max_output_tokens": 4096, "latency_s": 115.37, "usage_total": 47171, "result": "prior-preview read, explicit containment check and visual feedback; unintended duplicate detected"}
+  ],
+  "map_capture": {"width": 1280, "height": 945, "projection": "north-up zero-pitch Web Mercator", "camera_restored_after_3d_capture": true},
+  "mapped_features_returned": 35,
+  "geometry": {
+    "kind": "inclusion",
+    "area_m2": 1000000.0,
+    "edge_lengths_m": [1000, 1000, 1000, 1000],
+    "road_id": "osm:way:72711231",
+    "road_side": "west",
+    "minimum_distance_to_mapped_line_m": 20.0,
+    "road_crosses_interior": false,
+    "road_edge_clearance_known": false,
+    "contained_runway_id": "osm:way:820352006",
+    "contains_mapped_runway": true,
+    "runway_boundary_clearance_m": 104.25,
+    "full_airstrip_outline_known": false
+  },
+  "followup_guard": {"explicit_replacement_or_append_required": true, "tested_with_regression": true, "live_model_retest_after_guard": false},
+  "accepted_or_uploaded_fence": false,
+  "flight": {"simultaneous_copters": 2, "relative_heights_m": [100, 60], "both_landed_and_disarmed": true, "physical_vehicle_tested": false},
+  "limits": ["Mapped centrelines and imagery do not establish full feature boundaries", "Live model output still required corrections", "No automatic road segmentation or real-world clearance accuracy claim"]
+}

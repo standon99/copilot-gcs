@@ -52,6 +52,16 @@ export function ChatMessage({ message, children, pending = false }: any) {
           </div>
         )}
       </div>
+      {user && message.map_context && (
+        <div className="message-map-receipt">
+          Map shared · {message.map_context.width} ×{" "}
+          {message.map_context.height} · captured{" "}
+          {new Date(message.map_context.captured_at * 1000).toLocaleTimeString(
+            [],
+            { hour: "2-digit", minute: "2-digit" },
+          )}
+        </div>
+      )}
       {children}
       <ToolTrace steps={message.tool_trace} round={message.model?.rounds} />
     </article>

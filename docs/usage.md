@@ -174,7 +174,7 @@ not command recovery. A fence's breach action does not guarantee automatic
 detouring. See [ArduPilot fencing](https://ardupilot.org/copter/docs/common-polygon_fence.html).
 
 For AI-drawn boundaries, choose a model with image **and tool** support in
-**Settings → Model & endpoint**, save, then **Attach map** and describe the area.
+**Settings → Model & endpoint**, save, then enable **Share map** and describe the area.
 Settings reports those capabilities; known incompatible models disable attachment
 with a link back to Settings. Ollama `gpt-oss:120b` is text-only;
 `qwen3.5:397b` supports images and tools. Unknown endpoint capabilities remain
@@ -184,11 +184,35 @@ acceptance edits the local draft only. A text model can also propose boundaries
 from supplied coordinates. The [documented AI interface](ai-interface.md) is
 sent to the model on every planning request.
 
+**Share map** sends a fresh north-up 2D capture with each message while enabled,
+even if you are viewing 3D. The sent bubble shows its dimensions and capture time;
+expand **Last shared image** to inspect it. Captures include aircraft/home labels
+and a metric scale. State **inclusion** or **exclusion** explicitly.
+
+Open **Map features → Load nearby** to fetch road/runway candidates. Select a line
+on the map or a feature in the list to reference it in chat. **Trace road** and
+**Trace airstrip** let you click missing geometry and **Save trace**. For example:
+“Make an inclusion square 1,000 m on each side, west of this selected road with
+20 m clearance from its mapped line; include the selected runway.” The model can
+construct in metres and inspect an overlaid preview before replying. Measured
+checks appear in the proposal; an outside requested feature or a road crossing
+blocks acceptance. A centreline alone leaves width/full extent unknown. An exact
+square and a boundary following a curved road are different shapes.
+
 ### Map, flight instrument and multiple copters
 
 Choose a profile and a count in the launch bar. Up to six sessions may run together, including mixed profiles. App-owned instances start at separate nearby positions and have separate TCP/RC ports. Startup markers wait for an initial fresh 3D GPS fix and a subsequent position sample; zero and near-zero pre-fix estimator drift no longer places a new Plane over the ocean. After initialization, GPS loss may leave a visibly stale/degraded estimated position. The selected vehicle is teal, other vehicles amber, and stale markers are dimmed. Click a marker/tab to select it, **Locate vehicle** to centre it, or **Fit all** to see the group.
 
 The artificial horizon follows the selected vehicle and converts its attitude telemetry to display degrees. Stale/missing readings are blanked; unavailable attitude is labelled after three seconds without fresh data.
+
+The map starts in **2D**. Scroll/swipe up over it to tilt toward **3D**; swipe down
+to flatten. The **3D / 2D** button does the same. Pinch or use +/− to zoom; mouse
+wheel scrolling also tilts. Elevated dots use reported AMSL altitude, with vertical
+lines to mapped terrain and altitude labels. Terrain loads on demand. **Fit aircraft**
+frames positions and height; automatic framing zooms out when dots approach the
+edge. Panning pauses framing until **Fit aircraft**. Web terrain is a display layer,
+separate from autopilot terrain data and AGL watch inputs. It does not enable
+terrain-relative missions. Elevation tiles need internet.
 
 During supported navigation modes, a gold stick/target ring uses fresh autopilot position-target telemetry, falling back to the verified uploaded mission item in AUTO. The orange diamond is a **projected navigation-bearing cue** placed 5–50 m ahead for readability, not the autopilot's internal look-ahead point. Cues disappear when arming/mode/freshness requirements are not met. These displays consume no LLM calls. [MAVLink target message definition](https://mavlink.io/en/messages/common.html#POSITION_TARGET_GLOBAL_INT).
 

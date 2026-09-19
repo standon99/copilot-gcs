@@ -23,7 +23,14 @@ unselected session or invoke the MAVLink gateway.
 
 | Tool | Effect |
 | --- | --- |
-| `get_vehicle_state` | Current telemetry and bounded recent operational evidence |
+| `get_vehicle_state` | Current telemetry; recent operational evidence only when `include_evidence=true` |
+| `get_spatial_context` | Fresh position versus home, heading, map availability, scale and saved requirements |
+| `get_map_features` | Bounded nearby OpenStreetMap roads/runways or already loaded/traced geometry |
+| `trace_map_feature` | Stage an unverified road/airstrip/area trace from geographic or shared-image pixels |
+| `update_spatial_brief` | Remember explicit dimensions, fence kind, feature IDs, side and unresolved requirements |
+| `build_metric_geofence` | Measured rectangle or road-offset strip with containment and road checks; stage a preview |
+| `get_geofence_proposal` | Read the pending preview, including one from a previous turn |
+| `render_spatial_preview` | Overlay the boundary/features on the shared map and return an image to the model |
 | `get_mission` | Working mission, intent, home, supported commands and revision; paginated |
 | `update_waypoint` | Change specified fields of one waypoint by ID and expected revision |
 | `edit_waypoints` | Typed add/update/remove/reorder batch |
@@ -44,8 +51,8 @@ mission must have been numerically checked. A failed, cancelled or exhausted tur
 discards staged changes. Success creates one visible mission revision with Undo.
 Checks can return warnings or blockers; completion does not certify or upload a plan.
 
-Session identity, boot epoch, every selected draft/watch/monitor revision and
-settings revision are rechecked throughout the turn and before local commit.
+Session identity, boot epoch, every selected draft/watch/monitor/spatial revision,
+pending fence proposal and settings revision are rechecked throughout the turn and before local commit.
 Concurrent changes abort it, including changes to selected but untouched vehicles.
 Disk failure during the final local commit is reported as an interrupted commit;
 the operator must inspect the workspace. This is not an autopilot transaction.
@@ -109,8 +116,10 @@ Onboard upload remains separate and supports mixed inclusion/exclusion banks.
 
 ## Vision map input
 
-Select a model with image **and tool** support, choose **Attach map**, inspect the
-thumbnail and describe a boundary. A text model can use supplied coordinates;
+Select a model with image **and tool** support, enable **Share map**, and describe
+a boundary. Each message captures a fresh image while the switch is on; the user
+bubble confirms the sent dimensions and time. **Last shared image** shows the
+capture. Turning sharing off clears it. A text model can use supplied coordinates;
 attaching an image does not give a text-only model vision. No model is switched
 automatically. For Ollama cloud, `gpt-oss:120b` is text-only; `qwen3.5:397b`
 reports image and tool support. Choose the model in **Settings → Model & endpoint**
@@ -135,22 +144,45 @@ fixed, actionable message for image rejection, authentication, rate limits or
 service errors; raw provider bodies and credentials are never displayed. The
 app neither retries these failures automatically nor raises the saved usage caps.
 
-The native vision check returned previews with Qwen using a 120-second timeout,
+An earlier native vision check returned previews with Qwen using a 120-second timeout,
 but road alignment failed visual review even after a closer-image correction.
 See the [validation record](vision-compatibility-validation.json). A valid polygon
 and a confident model reply do not establish that the boundary follows the road.
 
-The actual map canvas is captured north-up, without tilt, at up to 1280 pixels per
-dimension, with a pixel grid and attribution. Rendered routes/areas are included;
-DOM vehicle/waypoint markers and the rest of the UI are not. The initial context
-includes home, vehicle identity and draft metadata; current position, heading and
-freshness are available through `get_vehicle_state`, which the model must call.
-Only an explicitly attached chat turn sends the
-image; automatic assessments and Diagnostics never do.
+The map is captured north-up in 2D at up to 1280 pixels per dimension, with a
+pixel grid, metric scale, attribution and explicit aircraft/home/waypoint labels.
+The previous camera tilt and terrain are restored after capture. Tiles must finish
+loading within eight seconds. Initial context distinguishes fresh current position
+from home, gives heading and age, and explicitly states whether an image is present
+in this turn. Annotation coordinates/pixels and metric extents accompany it.
+Automatic assessments and Diagnostics never receive images.
 
-The [spatial-planning review](spatial-planning.md) describes proposed additions
-for road/airstrip identification, metric construction and visual rechecking.
-Those additions are not implemented by the current tool catalog.
+The `gcs.tools.v3` catalog implements the [spatial interface](spatial-planning.md).
+Nearby lookup sends bounded coordinates/radius to the fixed Overpass endpoint,
+with no provider credential or model-written URL/query. It keeps at most 50
+features including traces. Source, time and uncertainty accompany each feature;
+a runway centreline does not establish its full outline. Selections and saved
+spatial requirements belong to the vehicle session and are not restart recovery.
+
+Metric construction uses a local WGS84 azimuthal-equidistant projection. Dimensions
+are 10–5,000 m; road placement requires a stated side and clearance (zero is valid).
+A rectangle keeps its dimensions and sits on the selected side of a bent road;
+it cannot follow every bend. A road-following strip follows the offset line and
+is not an exact square. Short segments, split/holed offsets and excessive vertices
+return errors. Containment, side lengths, area and distance to the mapped line
+are returned and shown with the proposal. Known containment failures or a road
+crossing the interior prevent acceptance. Unknown road width/outline stays unknown.
+Every metric request must supply `contain_feature_ids` (an empty list explicitly
+means no required feature). If areas already exist, `replace_index` is required
+to revise one; `append=true` explicitly adds another area. Omitting both is an
+error, preventing a follow-up correction from silently duplicating the fence.
+
+Fence kind must be explicit or already established. The model must ask if it is
+missing, including when the operator says the airstrip should be inside.
+With a shared image, a new fence must be rendered after its last edit before the
+turn can finish. Up to three overlay images per turn allow visual correction;
+only the latest feedback image and original capture remain in subsequent calls.
+Clipped proposal geometry is reported. This uses the normal turn/call/output caps.
 
 The PNG carries dimensions, time, vehicle/draft and bounds [west,south,east,north].
 Captures expire after three minutes or a draft change. Wrapping/polar views and

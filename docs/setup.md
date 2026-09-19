@@ -10,7 +10,7 @@
 - **Native tools:** Git and a working C/C++ compiler. On macOS, install Xcode Command Line Tools and Homebrew. The web GCS does not require MAVProxy.
 - **SITL:** build the three native binaries from the pinned ArduPilot checkout below. The source checkout and binaries are not included in this Git repository.
 - **Inference:** an Ollama cloud account/key, or an already-running local OpenAI-compatible model endpoint. You can use the GCS without inference; chat and automatic assessments require a working provider.
-- **Network/storage:** initial dependency/source downloads, build space, and network access to the selected imagery and inference providers. Runtime recordings consume additional disk space.
+- **Network/storage:** initial dependency/source downloads, build space, and access to imagery/inference providers. Optional 3D uses public Mapzen/AWS elevation tiles; nearby features use the fixed Overpass API. Runtime recordings consume additional disk space.
 
 Linux is a portability path, not a platform validated by this repository's current evidence. Install a Python 3.13 interpreter and Node 22+, follow [ArduPilot's Linux prerequisites](https://ardupilot.org/dev/docs/building-setup-linux.html), then use the common clone/build steps below. Native Windows is not supported by these shell scripts; a WSL2/Linux setup requires separate validation. See also [ArduPilot's macOS setup reference](https://ardupilot.org/dev/docs/building-setup-mac.html).
 
@@ -150,6 +150,10 @@ Open the matching URL. Stop with **Ctrl+C**; shutdown stops app-owned simulators
 | Node version or frontend build error | Put Node 22+ on PATH or use the ignored local Node option, then rerun setup |
 | Blank/stale map position | Wait for position/GPS telemetry, verify heartbeat age, then use Locate/Fit all; launch slots differ from each other |
 | Basemap unavailable | Check internet access to the imagery provider; coordinates, markers and draft editing do not depend on imagery |
+| 3D terrain/aircraft height not visible | Wait for elevation tiles from `s3.amazonaws.com/elevation-tiles-prod`; choose **Fit aircraft**. Unloaded terrain is not treated as sea level |
+| Spatial dependencies missing after updating | Activate `.venv` and run `python -m pip install -r requirements.txt`; spatial planning adds pinned pyproj and Pillow |
+| Copilot says it has no image | Enable **Share map** before sending. A sent message should show image dimensions/time; each enabled send captures a fresh view |
+| Model output-token limit | Narrow the request, or deliberately raise **Output tokens per chat call** in Settings (maximum 4,096). Limits are not raised automatically |
 | Arm/mode rejected | Inspect native prearm/status messages, GPS/estimator readiness and the selected profile; keep checks enabled |
 | `Claim control` / conflicting lease | Select the correct vehicle and claim it; another browser may hold the renewable 30-second lease |
 | Model unavailable / malformed JSON | Check model ID, endpoint and timeout; use Test connection. No inference failure should be interpreted as “all clear” |

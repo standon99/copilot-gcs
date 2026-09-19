@@ -4,5 +4,7 @@ pymavlink==2.4.49
 httpx==0.28.1
 python-dotenv==1.2.3
 shapely==2.1.2
+pyproj==3.7.2
+Pillow==12.3.0
 pytest==9.1.1
 pytest-asyncio==1.4.0

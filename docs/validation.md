@@ -1,5 +1,57 @@
 # Validation record
 
+## Spatial tools and 3D terrain — 2026-09-19
+
+Iteration based on 414a82e. **182 Python tests and 20 frontend tests passed**,
+with Ruff, formatting and the production build. Vite retains its bundle-size
+advisory. Fourteen new spatial tests cover metre geometry, curved/short roads,
+infeasible containment, required kind/containment arguments, trace validation,
+fresh position versus home, projection/scale, rendered image feedback, clipping,
+prior-proposal reads, concurrency guards and turn-local edits. Frontend tests
+cover pitch limits, height-aware bounds, stale positions and screen projection.
+After the final append guard, the affected 33 spatial/agent tests passed again.
+
+Chrome verification used an isolated runtime on port 8091, with automatic periodic
+and event inference off. A real Overpass query returned **35** mapped road/runway
+candidates. UI feature selection and repeated Share map sends worked; each sent
+message recorded a fresh 1280 × 945 image. Sending from 3D flattened the capture
+to north-up 2D and restored the tilted operator view.
+
+Three real Qwen turns attempted **nine model calls** in total. The first stopped
+at the 2,500 output-token limit on call two and committed nothing. With only the
+test installation increased to 4,096 tokens, a retry completed in **98.70 s**,
+three calls/three tools (**33,171 reported tokens**). It built a measured 1,000 m
+square west of Monaro Highway, 20.0 m from its mapped line, and inspected an
+overlay. It omitted the requested runway's numerical containment IDs; those
+IDs are now a required argument, including an explicit empty list when appropriate.
+
+A follow-up using that schema read the pending preview, rebuilt it with the
+runway ID and inspected the overlay: **115.37 s**, four calls/four tools,
+**47,171 reported tokens**. The mapped runway line was contained with **104.25 m**
+boundary clearance; its full outline remained unknown. The model also appended
+an unintended duplicate area. The final tool now rejects ambiguous edits when an
+area exists: callers must select `replace_index` or explicitly request `append`.
+Regression checks verify rejection leaves the proposal unchanged, replacement
+keeps one area, and explicit append adds another. The live vision turns predate
+that final guard; no further paid retries were made. Neither preview was accepted
+or uploaded. [Measured record](spatial-terrain-validation.json).
+
+Two app-owned Copters flew simultaneously to **100 m and 60 m above home**.
+Actual 3D dots/labels, ground reference lines, swipe up/down, fit controls and
+framing during climb were inspected. Both landed and disarmed. An attempted
+150 m takeoff was rejected by the existing 1–120 m command limit before the 100 m
+test; no command limits were weakened. Missing DEM tiles no longer cause false
+sea-level ground/framing, and overlapping ground markers were reduced in 3D.
+This tests the browser display and simulator integration, not physical flight or
+terrain clearance. The web DEM is separate from AGL watch inputs.
+
+Actual screenshots and capture conditions are in the [gallery](screenshots/README.md).
+The user installation was restarted with its exact saved preferences, both drafts
+and **14 chat entries** preserved. Sessions received new IDs and control leases
+reset. The isolated test server/simulators were stopped afterward. README, usage,
+setup, product, AI interface, implementation, development and spatial docs were
+updated. The broader design/feasibility baselines were checked and remain historical.
+
 ## Chat bubbles and waiting state — 2026-09-18
 
 Iteration based on 3fc210a. **17 frontend tests passed** and the production

@@ -1,4 +1,7 @@
 import { ChatMessage, WaitingReply } from "./ChatMessage";
+import { captureMapImage } from "./mapCapture";
+import { TerrainView } from "./TerrainView";
+import { SpatialPanel } from "./SpatialPanel";
 import { chatState } from "./chatState.mjs";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -91,6 +94,8 @@ function MapView({
   onSaveAreas,
   proposal,
   captureRef,
+  spatial,
+  onSpatialChange,
 }: Json) {
   const el = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map>(null),
@@ -98,6 +103,21 @@ function MapView({
     vehicleMarkers = useRef<Record<string, maplibregl.Marker>>({}),
     cueMarkers = useRef<Record<string, maplibregl.Marker>>({}),
     centered = useRef(false);
+  const terrainView = useRef<TerrainView | null>(null);
+  const [terrainActive, setTerrainActive] = useState(false);
+  const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [featureTrace, setFeatureTrace] = useState<Json>(null);
+  const [featureBusy, setFeatureBusy] = useState(false);
+  const [featureError, setFeatureError] = useState("");
+  const selectFeature = async (id: string) => {
+    const ids = spatial?.selected_ids || [];
+    await onSpatialChange({
+      expected_revision: spatial?.revision || 0,
+      selected_ids: ids.includes(id)
+        ? ids.filter((x: string) => x !== id)
+        : [...ids, id],
+    });
+  };
   const [areaEdit, setAreaEdit] = useState<Json>(null),
     [areaBusy, setAreaBusy] = useState(false),
     [areaError, setAreaError] = useState("");
@@ -112,6 +132,9 @@ function MapView({
     onSelectVehicle,
     areaEdit,
     areaBusy,
+    featureTrace,
+    spatial,
+    selectFeature,
   };
   const renderMap = useRef<() => void>(() => {});
   const [sat, setSat] = useState(true),
@@ -160,7 +183,23 @@ function MapView({
       "bottom-left",
     );
     m.on("click", (e) => {
-      if (props.current.areaEdit && !props.current.areaBusy) {
+      if (props.current.featureTrace) {
+        setFeatureTrace(
+          (f: Json) =>
+            f && { ...f, points: [...f.points, [e.lngLat.lng, e.lngLat.lat]] },
+        );
+      } else if (
+        !props.current.areaEdit &&
+        m.getLayer("spatial-lines") &&
+        m.queryRenderedFeatures(e.point, { layers: ["spatial-lines"] }).length
+      ) {
+        const f = m.queryRenderedFeatures(e.point, {
+          layers: ["spatial-lines"],
+        })[0];
+        props.current
+          .selectFeature(String(f.properties.id))
+          .catch((error: Error) => setFeatureError(error.message));
+      } else if (props.current.areaEdit && !props.current.areaBusy) {
         setAreaEdit((a: Json) => ({
           ...a,
           points: [...a.points, [e.lngLat.lng, e.lngLat.lat]],
@@ -174,6 +213,30 @@ function MapView({
       ),
     );
     m.on("load", () => {
+      terrainView.current = new TerrainView(m, setTerrainActive, (id) =>
+        props.current.onSelectVehicle?.(id),
+      );
+      m.addSource("spatial-features", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addLayer({
+        id: "spatial-lines",
+        type: "line",
+        source: "spatial-features",
+        paint: {
+          "line-color": [
+            "case",
+            ["get", "selected"],
+            "#fff1a0",
+            ["==", ["get", "kind"], "road"],
+            "#dfb65f",
+            "#7cdaf3",
+          ],
+          "line-width": ["case", ["get", "selected"], 5, 2],
+          "line-opacity": 0.85,
+        },
+      });
       m.addSource("route", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -293,6 +356,8 @@ function MapView({
       renderMap.current();
     });
     return () => {
+      terrainView.current?.destroy();
+      terrainView.current = null;
       markers.current.forEach((x) => x.remove());
       Object.values(vehicleMarkers.current).forEach((marker) =>
         marker.remove(),
@@ -305,6 +370,25 @@ function MapView({
   const updateMap = () => {
     const m = map.current;
     if (!m?.getSource("route")) return;
+    const spatialFeatures = (spatial?.features || []).map((f: Json) => ({
+      type: "Feature",
+      properties: {
+        id: f.id,
+        kind: f.kind,
+        selected: (spatial?.selected_ids || []).includes(f.id),
+      },
+      geometry: f.geometry,
+    }));
+    if (featureTrace?.points.length > 1)
+      spatialFeatures.push({
+        type: "Feature",
+        properties: { id: "trace", kind: featureTrace.kind, selected: true },
+        geometry: { type: "LineString", coordinates: featureTrace.points },
+      });
+    (m.getSource("spatial-features") as maplibregl.GeoJSONSource)?.setData({
+      type: "FeatureCollection",
+      features: spatialFeatures,
+    });
     const features: Json[] = [];
     for (const [kind, plan] of [
       ["draft", draft],
@@ -474,6 +558,7 @@ function MapView({
   const updateVehicle = () => {
     const m = map.current;
     if (!m?.getSource("route")) return;
+    terrainView.current?.update(visibleVehicles, vehicle?.id);
     const cue = historical ? null : vehicle?.navigation_cue;
     const cueFeatures: any[] = [];
     for (const kind of ["target", "carrot"]) {
@@ -612,52 +697,24 @@ function MapView({
       const m = map.current;
       if (!m || !m.loaded() || areaEdit)
         throw Error("Finish drawing and wait for map tiles before attaching.");
-      m.jumpTo({ bearing: 0, pitch: 0 });
-      await new Promise<void>((resolve) => {
-        m.once("render", () => resolve());
-        m.triggerRepaint();
-      });
-      const source = m.getCanvas(),
-        canvas = document.createElement("canvas");
-      const scale = Math.min(1, 1280 / source.width, 1280 / source.height);
-      canvas.width = Math.round(source.width * scale);
-      canvas.height = Math.round(source.height * scale);
-      const context = canvas.getContext("2d")!;
-      context.drawImage(source, 0, 0, canvas.width, canvas.height);
-      // Pixel grid gives vision models explicit image-space reference points.
-      context.font = "12px monospace";
-      for (let x = 0; x < canvas.width; x += 100)
-        for (let y = 0; y < canvas.height; y += 100) {
-          context.fillStyle = "#14202bcc";
-          context.fillRect(x, y, 76, 18);
-          context.fillStyle = "#ffffff";
-          context.fillText(`${x},${y}`, x + 3, y + 13);
+      if (featureTrace)
+        throw Error("Finish the feature trace before sharing the map.");
+      const terrain = terrainView.current;
+      if (terrain) terrain.suspended = true;
+      try {
+        return await captureMapImage(m, vehicle, vehicles || [vehicle], draft);
+      } finally {
+        if (terrain) {
+          terrain.suspended = false;
+          terrain.pitch();
         }
-      context.fillStyle = "#14202bee";
-      context.fillRect(0, canvas.height - 22, canvas.width, 22);
-      context.fillStyle = "#ffffff";
-      context.fillText(
-        sat
-          ? "Imagery © Esri, Maxar, Earthstar Geographics"
-          : "© OpenStreetMap contributors",
-        8,
-        canvas.height - 7,
-      );
-      const b = m.getBounds();
-      return {
-        vehicle_id: vehicle.id,
-        draft_revision: draft.revision,
-        captured_at: Date.now() / 1000,
-        image: canvas.toDataURL("image/png"),
-        width: canvas.width,
-        height: canvas.height,
-        bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
-      };
+      }
     };
     return () => {
       captureRef.current = null;
     };
-  }, [captureRef, vehicle?.id, draft?.revision, areaEdit, sat]);
+  }, [captureRef, vehicle, vehicles, draft, areaEdit, featureTrace, sat]);
+  useEffect(updateMap, [spatial, featureTrace]);
   const saveAreas = async (
     areas: Json,
     revision: number,
@@ -697,12 +754,34 @@ function MapView({
               : "LIVE OPERATIONS"}
         </span>
         <div className="map-buttons">
+          {!historical && (
+            <button
+              onClick={() => setFeaturesOpen(!featuresOpen)}
+              disabled={!!areaEdit}
+            >
+              Map features
+            </button>
+          )}
+          <button
+            aria-label={
+              terrainActive ? "Switch to 2D map" : "Switch to 3D terrain"
+            }
+            title="Swipe up to tilt; swipe down to flatten; pinch to zoom"
+            onClick={() => terrainView.current?.setMode(!terrainActive)}
+          >
+            {terrainActive ? "2D" : "3D"}
+          </button>
+          {terrainActive && (
+            <button onClick={() => terrainView.current?.fit()}>
+              Fit aircraft
+            </button>
+          )}
           {editing &&
             draft &&
             ["inclusion", "exclusion"].map((kind) => (
               <button
                 key={kind}
-                disabled={areaBusy || !!areaEdit}
+                disabled={areaBusy || !!areaEdit || !!featureTrace}
                 onClick={() => {
                   setAreaEdit({
                     kind,
@@ -751,6 +830,68 @@ function MapView({
           )}
         </div>
       </div>
+      {featuresOpen && !historical && (
+        <SpatialPanel
+          spatial={spatial}
+          busy={featureBusy}
+          error={featureError}
+          trace={featureTrace}
+          onClose={() => {
+            setFeaturesOpen(false);
+            setFeatureTrace(null);
+          }}
+          onLoad={async () => {
+            setFeatureBusy(true);
+            setFeatureError("");
+            try {
+              await onSpatialChange(null);
+            } catch (e: any) {
+              setFeatureError(e.message);
+            } finally {
+              setFeatureBusy(false);
+            }
+          }}
+          onSelect={(id: string) =>
+            selectFeature(id).catch((e: Error) => setFeatureError(e.message))
+          }
+          onTrace={(kind: string) => {
+            setFeatureTrace({ kind, points: [] });
+            setFeatureError("");
+          }}
+          onCancel={() => setFeatureTrace(null)}
+          onUndo={() =>
+            setFeatureTrace((f: Json) => ({
+              ...f,
+              points: f.points.slice(0, -1),
+            }))
+          }
+          onSave={async () => {
+            setFeatureBusy(true);
+            setFeatureError("");
+            try {
+              await onSpatialChange({
+                expected_revision: spatial?.revision || 0,
+                feature: {
+                  kind: featureTrace.kind,
+                  label:
+                    featureTrace.kind === "road"
+                      ? "Selected road"
+                      : "Selected airstrip",
+                  geometry_type:
+                    featureTrace.kind === "road" ? "LineString" : "Polygon",
+                  points: featureTrace.points,
+                  uncertainty: "Operator trace from map imagery; not surveyed",
+                },
+              });
+              setFeatureTrace(null);
+            } catch (e: any) {
+              setFeatureError(e.message);
+            } finally {
+              setFeatureBusy(false);
+            }
+          }}
+        />
+      )}
       {mapError && <div className="map-error">{mapError}</div>}
       {editing &&
         (areaEdit ||
@@ -916,13 +1057,11 @@ function MapView({
           )}
         </div>
       )}
-      <div className="map-note">
-        {areaEdit
-          ? "Drawing changes the local draft only."
-          : editing
-            ? "Drag a waypoint to revise the draft."
-            : "Imagery is not obstacle sensing."}
-      </div>
+      {editing && (
+        <div className="map-note">
+          {areaEdit ? "Click corners to draw." : "Drag a waypoint to edit."}
+        </div>
+      )}
     </div>
   );
 }
@@ -967,6 +1106,7 @@ function App() {
   const followChat = useRef(true);
   const captureMap = useRef<null | (() => Promise<Json>)>(null);
   const [mapAttachment, setMapAttachment] = useState<Json>(null);
+  const [shareMap, setShareMap] = useState(false);
   const modelCapabilities = useModelCapabilities(config);
   const mapModelBlocked =
     modelCapabilities?.vision === false || modelCapabilities?.tools === false;
@@ -1284,7 +1424,7 @@ function App() {
       work?.vehicle_id !== vid
     )
       return;
-    if (interactionMode && mapAttachment && mapModelBlocked) {
+    if (interactionMode && shareMap && mapModelBlocked) {
       setError(
         "Choose a model with image and tool support in Settings before sending the map.",
       );
@@ -1309,13 +1449,21 @@ function App() {
     guard(async () => {
       try {
         if (interactionMode) {
+          let image = null;
+          if (shareMap) {
+            if (!captureMap.current)
+              throw Error(
+                "Open the map before sending with Share map enabled.",
+              );
+            image = await captureMap.current();
+            setMapAttachment(image);
+          }
           const result = await api("/interaction", "POST", {
             message: text,
             enabled: true,
             targets,
-            map_image: mapAttachment,
+            map_image: image,
           });
-          setMapAttachment(null);
           result.workspaces.forEach(setWork);
         } else
           await api(`/vehicles/${vid}/chat`, "POST", {
@@ -1764,6 +1912,16 @@ function App() {
                       setSelected={setSelected}
                       home={config.home}
                       captureRef={captureMap}
+                      spatial={work?.spatial}
+                      onSpatialChange={async (body: Json) =>
+                        setWork(
+                          await api(
+                            `/vehicles/${vid}/spatial${body ? "" : "/features"}`,
+                            body ? "PUT" : "POST",
+                            body || {},
+                          ),
+                        )
+                      }
                       proposal={work?.geofence_proposal}
                       onSaveAreas={async (
                         areas: Json,
@@ -3033,10 +3191,60 @@ function App() {
                         {work.geofence_proposal.inclusion_mode}. Accept changes
                         the draft; upload is separate.
                       </p>
+                      {work.geofence_proposal.spatial_checks && (
+                        <div className="spatial-checks">
+                          <p>
+                            Area{" "}
+                            {Math.round(
+                              work.geofence_proposal.spatial_checks.area_m2,
+                            ).toLocaleString()}{" "}
+                            m² · sides{" "}
+                            {work.geofence_proposal.spatial_checks.edge_lengths_m
+                              .map((n: number) => Math.round(n))
+                              .join(" / ")}{" "}
+                            m
+                          </p>
+                          {work.geofence_proposal.spatial_checks.feature_containment.map(
+                            (f: any) => (
+                              <p
+                                key={f.feature_id}
+                                className={
+                                  f.contains_mapped_geometry ? "" : "bad"
+                                }
+                              >
+                                {f.feature_id}:{" "}
+                                {f.contains_mapped_geometry
+                                  ? "mapped geometry inside"
+                                  : "outside requested area"}
+                                {!f.full_outline_known &&
+                                  " · full outline unknown"}
+                              </p>
+                            ),
+                          )}
+                          {work.geofence_proposal.spatial_checks.road && (
+                            <p>
+                              Distance to mapped road line:{" "}
+                              {
+                                work.geofence_proposal.spatial_checks.road
+                                  .minimum_distance_to_mapped_line_m
+                              }{" "}
+                              m. Road edge clearance unknown.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {(work.geofence_proposal.spatial_issues || []).map(
+                        (issue: string) => (
+                          <p className="bad" key={issue}>
+                            {issue}. Revise before accepting.
+                          </p>
+                        ),
+                      )}
                       <div className="button-row">
                         <button
                           className="primary"
                           disabled={
+                            !!work.geofence_proposal.spatial_issues?.length ||
                             work.geofence_proposal.base_revision !==
                               draft.revision ||
                             work.geofence_proposal.epoch !== current.epoch
@@ -3249,37 +3457,27 @@ function App() {
                   )}
                   {interactionMode && (
                     <div className="map-attachment">
-                      {mapAttachment ? (
-                        <>
+                      <label className="share-map-toggle">
+                        <input
+                          type="checkbox"
+                          checked={shareMap}
+                          disabled={chatBusy || mapModelBlocked}
+                          onChange={(e) => {
+                            setShareMap(e.target.checked);
+                            if (!e.target.checked) setMapAttachment(null);
+                          }}
+                        />
+                        Share map
+                      </label>
+                      {shareMap && <span>Fresh image with each message</span>}
+                      {shareMap && mapAttachment && (
+                        <details className="shared-map-preview">
+                          <summary>Last shared image</summary>
                           <img
                             src={mapAttachment.image}
-                            alt="Map image attached to the next Copilot message"
+                            alt="The map image sent with your last message"
                           />
-                          <span>
-                            Map attached · {mapAttachment.width} ×{" "}
-                            {mapAttachment.height} · {config.model}
-                          </span>
-                          <button onClick={() => setMapAttachment(null)}>
-                            Remove image
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          disabled={
-                            chatBusy ||
-                            mapModelBlocked ||
-                            !["plan", "flight"].includes(tab)
-                          }
-                          onClick={() =>
-                            guard(async () => {
-                              if (!captureMap.current)
-                                throw Error("Open Plan to attach the map.");
-                              setMapAttachment(await captureMap.current());
-                            })
-                          }
-                        >
-                          Attach map
-                        </button>
+                        </details>
                       )}
                       {mapModelBlocked && (
                         <span role="status">
@@ -3348,7 +3546,7 @@ function App() {
                         replyState.waiting ||
                         !chat.trim() ||
                         work?.vehicle_id !== vid ||
-                        (interactionMode && !!mapAttachment && mapModelBlocked)
+                        (interactionMode && shareMap && mapModelBlocked)
                       }
                       onClick={sendChat}
                     >
