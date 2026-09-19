@@ -4,11 +4,11 @@
 
 A web ground control station for ArduPilot **Copter, Plane and Rover**, with an integrated AI chat.
 
-![Copilot GCS mission planning with a real simulated vehicle](docs/screenshots/mission-planning.jpg)
+![Copilot GCS waiting for a real model reply beside a simulated vehicle](docs/screenshots/chat-waiting.jpg)
 
 ## Features
 
-- **AI planning:** multi-step tool calls read, edit and check missions in one conversation; inspect each action.
+- **AI chat:** message bubbles, a visible waiting reply and Stop; multi-step tools read, edit and check missions, with expandable details.
 - **Flight workspace:** map, instruments and flight controls; separate Chat, Alerts and Watch rules panels.
 - **Planning:** waypoint editing, drawn inclusion/exclusion areas and verified fence upload; parameters, logs and replay.
 - **Multiple vehicles:** select Copilot's targets and run up to six simulations together.

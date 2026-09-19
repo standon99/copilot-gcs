@@ -1167,30 +1167,180 @@ td input {
   border: 1px solid #3b5656;
 }
 .chat-message {
-  padding: 15px 0;
-  border-bottom: 1px solid #2d414e;
+  width: 92%;
+  margin: 0 0 22px;
+  min-width: 0;
 }
 .chat-message.user {
-  padding: 13px;
-  background: #203440;
-  border: 1px solid #334d5a;
-  border-radius: 5px;
-  margin-top: 12px;
+  width: 86%;
+  margin-left: auto;
 }
-.chat-message.user .card-kicker {
-  color: #86b8d0;
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px 7px;
+  font-size: 10px;
+  color: #a4bac6;
 }
-.chat-message.error {
-  color: #ffc2b4;
-  background: #492e2d;
-  padding: 12px;
+.message-meta time,
+.reply-model {
+  font-size: 9px;
+  color: #829ba9;
 }
-.chat-message p {
-  font-size: 12px;
-  line-height: 1.8;
+.reply-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-message.user .message-meta {
+  justify-content: flex-end;
+}
+.message-bubble {
+  border: 1px solid #32444f;
+  background: #21313c;
+  border-radius: 4px 17px 17px 17px;
+  padding: 13px 15px;
+  color: #e0e9ee;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.chat-message.user .message-bubble {
+  background: #25463f;
+  border-color: #355d54;
+  border-radius: 17px 4px 17px 17px;
+  color: #e3f3ee;
+}
+.chat-message.error .message-bubble {
+  background: #39292b;
+  border-color: #6b4447;
+  color: #ffc6c2;
+}
+.chat-message.stopped .message-bubble {
+  color: #afc2cb;
+}
+.message-bubble .message-plain {
   white-space: pre-wrap;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+.message-markdown > :first-child {
+  margin-top: 0;
+}
+.message-markdown > :last-child {
   margin-bottom: 0;
-  color: #c7d6df;
+}
+.message-markdown p {
+  margin: 0 0 10px;
+  color: inherit;
+  font: inherit;
+}
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 16px 0 8px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.message-markdown ul,
+.message-markdown ol {
+  padding-left: 20px;
+  margin: 8px 0 12px;
+}
+.message-markdown li {
+  margin: 5px 0;
+}
+.message-markdown li > p {
+  margin: 4px 0;
+}
+.message-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 11px;
+}
+.message-markdown code {
+  font-size: 0.9em;
+}
+.message-markdown blockquote {
+  border-left: 2px solid #5b8a82;
+  margin: 12px 0;
+  padding-left: 12px;
+}
+.message-markdown a {
+  color: #9adace;
+  text-decoration: underline;
+}
+.waiting-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+}
+.waiting-bubble > [role="status"] {
+  color: #bfd0d9;
+  font-size: 12px;
+}
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 18px;
+}
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #88c8ba;
+  animation: chat-dot 1.35s ease-in-out infinite;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes chat-dot {
+  0%,
+  65%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots i {
+    animation: none;
+  }
+}
+.reply-wait-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 5px 3px 0;
+  color: #829ba9;
+  font-size: 10px;
+}
+.reply-wait-actions .stop-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  background: transparent;
+  border: 0;
+  color: #b1c8d2;
+  font-size: 11px;
 }
 .change-card {
   background: #142b2a;
@@ -2898,16 +3048,24 @@ header.status-island {
   white-space: nowrap;
 }
 .tool-trace {
-  border: 1px solid #344c56;
-  border-radius: 7px;
-  padding: 10px;
-  margin: 10px 0;
-  font-size: 12px;
-  background: #101e26;
+  padding: 0 3px;
+  margin: 8px 0 0;
+  font-size: 10px;
 }
 .tool-trace > summary {
   cursor: pointer;
-  color: #a9e4da;
+  color: #8ea7b4;
+}
+.tool-trace[open] {
+  background: #101e26;
+  border: 1px solid #344c56;
+  border-radius: 8px;
+  padding: 10px;
+}
+.tool-trace .request-count {
+  font-size: 10px;
+  color: #8ea7b4;
+  margin: 10px 0;
 }
 .tool-step {
   padding: 8px 0;

@@ -1,4 +1,5 @@
-import { ToolTrace } from "./ToolTrace";
+import { ChatMessage, WaitingReply } from "./ChatMessage";
+import { chatState } from "./chatState.mjs";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -949,6 +950,7 @@ function App() {
     [launchProfile, setLaunchProfile] = useState("copter"),
     [launchCount, setLaunchCount] = useState(1),
     [chatBusy, setChatBusy] = useState(false);
+  const [pendingChat, setPendingChat] = useState<Json>(null);
   const [events, setEvents] = useState<Json[]>([]),
     [messages, setMessages] = useState<Json[]>([]),
     [recordings, setRecordings] = useState<Json[]>([]),
@@ -962,6 +964,7 @@ function App() {
     [logEntries, setLogEntries] = useState<Json[]>([]);
   const [evidence, setEvidence] = useState<Json>(null);
   const chatInput = useRef<HTMLTextAreaElement>(null);
+  const followChat = useRef(true);
   const captureMap = useRef<null | (() => Promise<Json>)>(null);
   const [mapAttachment, setMapAttachment] = useState<Json>(null);
   const modelCapabilities = useModelCapabilities(config);
@@ -1019,6 +1022,25 @@ function App() {
     draft = work?.draft,
     profile = config?.profiles[current?.profile],
     chatBottom = useRef<HTMLDivElement>(null);
+  const replyState = chatState(
+    vid,
+    current?.agent_run,
+    work?.vehicle_id === vid ? work.chat : [],
+    pendingChat,
+  );
+  const beginChat = (text: string, targets: string[]) => {
+    followChat.current = true;
+    setPendingChat({
+      text,
+      targets,
+      model: config.model,
+      startedAt: Date.now() / 1000,
+      previousRuns: Object.fromEntries(
+        vehicles.map((v) => [v.id, v.agent_run?.id]),
+      ),
+    });
+    setChatBusy(true);
+  };
   useEffect(() => {
     if (current && work?.vehicle_id === current.id)
       void refresh(current.id).catch((e: Error) => setError(e.message));
@@ -1112,8 +1134,12 @@ function App() {
     return () => clearInterval(id);
   }, [vid, control]);
   useEffect(() => {
-    chatBottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [work?.chat?.length, chatBusy]);
+    if (followChat.current)
+      chatBottom.current?.scrollIntoView({ behavior: "smooth" });
+  }, [work?.chat?.length, replyState.waiting, pendingChat, sidePanel]);
+  useEffect(() => {
+    followChat.current = true;
+  }, [vid]);
   useEffect(() => {
     if (!vid) return;
     if (tab === "parameters")
@@ -1201,17 +1227,19 @@ function App() {
         "Numerical review attached. Requesting the copilot's plan assessment…",
       );
       setSidePanel("chat");
-      setChatBusy(true);
+      const message =
+        "Review the current mission, route and declared intent. Explain concrete issues, assumptions and unavailable checks. Do not edit the draft.";
+      beginChat(message, [vid]);
       try {
         setWork(
           await api(`/vehicles/${vid}/chat`, "POST", {
-            message:
-              "Review the current mission, route and declared intent. Explain concrete issues, assumptions and unavailable checks. Do not edit the draft.",
+            message,
             edit_authorized: false,
           }),
         );
       } finally {
         setChatBusy(false);
+        setPendingChat(null);
       }
     }, "review");
   const describeTask = (text?: string) => {
@@ -1248,7 +1276,13 @@ function App() {
       );
     }, "upload");
   const sendChat = () => {
-    if (!chat.trim() || chatBusy || !current || work?.vehicle_id !== vid)
+    if (
+      !chat.trim() ||
+      chatBusy ||
+      replyState.waiting ||
+      !current ||
+      work?.vehicle_id !== vid
+    )
       return;
     if (interactionMode && mapAttachment && mapModelBlocked) {
       setError(
@@ -1271,26 +1305,32 @@ function App() {
       interactionMode && !targets.includes(vid) ? targets[0] : vid;
     if (responseVehicle !== vid) setVid(responseVehicle);
     setChat("");
-    setChatBusy(true);
+    beginChat(text, interactionMode ? targets : [vid]);
     guard(async () => {
-      if (interactionMode) {
-        const result = await api("/interaction", "POST", {
-          message: text,
-          enabled: true,
-          targets,
-          map_image: mapAttachment,
-        });
-        setMapAttachment(null);
-        result.workspaces.forEach(setWork);
-      } else
-        await api(`/vehicles/${vid}/chat`, "POST", {
-          message: text,
-          edit_authorized: editAuthorized,
-        });
-      await refresh(responseVehicle);
+      try {
+        if (interactionMode) {
+          const result = await api("/interaction", "POST", {
+            message: text,
+            enabled: true,
+            targets,
+            map_image: mapAttachment,
+          });
+          setMapAttachment(null);
+          result.workspaces.forEach(setWork);
+        } else
+          await api(`/vehicles/${vid}/chat`, "POST", {
+            message: text,
+            edit_authorized: editAuthorized,
+          });
+        await refresh(responseVehicle);
+      } catch (e) {
+        setChat((currentText) => currentText || text);
+        throw e;
+      }
     }).finally(() => {
       void guard(() => refresh(selectedVehicleRef.current));
       setChatBusy(false);
+      setPendingChat(null);
     });
   };
   const launch = () =>
@@ -2904,8 +2944,17 @@ function App() {
                     "conversation" +
                     (sidePanel !== "chat" ? " panel-hidden" : "")
                   }
+                  role="log"
+                  aria-label="Chat messages"
+                  aria-live="polite"
+                  aria-relevant="additions"
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    followChat.current =
+                      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                  }}
                 >
-                  {!work?.chat.length && (
+                  {!work?.chat.length && !replyState.waiting && (
                     <div className="copilot-intro">
                       <MessageSquare size={24} />
                       <h3>Copilot</h3>
@@ -2933,18 +2982,8 @@ function App() {
                       </span>
                     </div>
                   )}
-                  {work?.chat.map((m: Json, i: number) => (
-                    <div className={"chat-message " + m.role} key={i}>
-                      <div className="card-kicker">
-                        {m.role === "user"
-                          ? "YOU"
-                          : m.role === "error"
-                            ? "INFERENCE ERROR"
-                            : "COPILOT"}
-                        <span>{clock(m.ts)}</span>
-                      </div>
-                      <p>{m.text}</p>
-                      <ToolTrace steps={m.tool_trace} />
+                  {replyState.messages.map((m: Json, i: number) => (
+                    <ChatMessage message={m} key={`${m.ts}-${i}`}>
                       {m.change && (
                         <div className="change-card">
                           <strong>
@@ -2981,7 +3020,7 @@ function App() {
                           </button>
                         </div>
                       )}
-                    </div>
+                    </ChatMessage>
                   ))}
                   {work?.geofence_proposal && (
                     <div className="area-proposal">
@@ -3149,17 +3188,33 @@ function App() {
                         )}
                       </div>
                     ))}
-                  {(chatBusy || current.agent_run?.status === "running") && (
-                    <ToolTrace
-                      running
-                      steps={current.agent_run?.steps || []}
-                      round={current.agent_run?.round}
-                      maxRounds={current.agent_run?.max_rounds}
-                      onCancel={() =>
-                        guard(() =>
-                          api(`/vehicles/${vid}/agent/cancel`, "POST", {}),
-                        )
+                  {replyState.outgoing && (
+                    <ChatMessage
+                      pending={replyState.outgoing.pending}
+                      message={replyState.outgoing}
+                    />
+                  )}
+                  {replyState.waiting && (
+                    <WaitingReply
+                      key={replyState.run?.id || replyState.local?.startedAt}
+                      model={replyState.local?.model || config.model}
+                      startedAt={
+                        replyState.run?.started_at ||
+                        replyState.local?.startedAt
                       }
+                      run={replyState.run}
+                      onStop={async () => {
+                        try {
+                          await api(
+                            `/vehicles/${vid}/agent/cancel`,
+                            "POST",
+                            {},
+                          );
+                        } catch (e: any) {
+                          setError(e.message);
+                          throw e;
+                        }
+                      }}
                     />
                   )}
                   <div ref={chatBottom} />
@@ -3290,6 +3345,7 @@ function App() {
                       aria-label="Send to copilot"
                       disabled={
                         chatBusy ||
+                        replyState.waiting ||
                         !chat.trim() ||
                         work?.vehicle_id !== vid ||
                         (interactionMode && !!mapAttachment && mapModelBlocked)
@@ -3298,13 +3354,6 @@ function App() {
                     >
                       <Send size={18} />
                     </button>
-                  </div>
-                  <div className="chat-footer">
-                    <span>
-                      {interactionMode
-                        ? "Drafts + areas + parameters + watches"
-                        : "Local draft tools only"}
-                    </span>
                   </div>
                 </div>
               </aside>

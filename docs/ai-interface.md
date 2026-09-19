@@ -3,9 +3,11 @@
 Chat uses native OpenAI-compatible function calls through `/v1/chat/completions`.
 The model reads GCS state, requests typed edits, receives each tool result and can
 continue checking or correcting its work in the same turn. It finishes with a
-normal conversational reply. Expand **Tool actions** in Chat to inspect arguments,
-results and errors; **Cancel turn** stops pending work. Private model reasoning is
-not displayed or recorded.
+normal conversational reply. Chat shows a waiting message with the model, elapsed
+time and **Stop**. Expand **Activity details** while waiting or **Reply details**
+afterward to inspect arguments, results, errors and model-request counts.
+Replies are delivered on completion, not streamed; animated dots only indicate
+pending work. Private model reasoning is not displayed or recorded.
 
 The versioned catalog is available at
 [GET /api/ai/capabilities](http://127.0.0.1:8080/api/ai/capabilities), linked as
@@ -140,9 +142,15 @@ and a confident model reply do not establish that the boundary follows the road.
 
 The actual map canvas is captured north-up, without tilt, at up to 1280 pixels per
 dimension, with a pixel grid and attribution. Rendered routes/areas are included;
-DOM vehicle/waypoint markers and the rest of the UI are not. Structured vehicle
-state is supplied separately. Only an explicitly attached chat turn sends the
+DOM vehicle/waypoint markers and the rest of the UI are not. The initial context
+includes home, vehicle identity and draft metadata; current position, heading and
+freshness are available through `get_vehicle_state`, which the model must call.
+Only an explicitly attached chat turn sends the
 image; automatic assessments and Diagnostics never do.
+
+The [spatial-planning review](spatial-planning.md) describes proposed additions
+for road/airstrip identification, metric construction and visual rechecking.
+Those additions are not implemented by the current tool catalog.
 
 The PNG carries dimensions, time, vehicle/draft and bounds [west,south,east,north].
 Captures expire after three minutes or a draft change. Wrapping/polar views and

@@ -1,5 +1,26 @@
 # Actual application screenshots
 
+The chat update based on **3fc210a** added **chat-waiting.jpg** and **chat.jpg**
+on 2026-09-18, using the production page on port 8091 and an isolated disarmed
+Copter runtime. The waiting image shows a real `qwen3.5:397b` request in progress;
+the conversation image shows a real completed reply and a later cancelled
+request. User messages align right, replies left; activity details are collapsed.
+The waiting dots are an activity indicator, not streamed model output.
+
+These are unmodified 1796 × 1043 browser captures, inspected for layout,
+attribution and secrets. No mission, fence, watch or parameter was changed and
+automatic inference was off. [Validation](../validation.md).
+
+![Waiting for the model](chat-waiting.jpg)
+
+![Conversation and stopped reply](chat.jpg)
+
+## Earlier captures
+
+The images below retain historical validation evidence. Their chat layout and
+Tool actions/Cancel turn labels predate the message bubbles shown above; use the
+new captures for the current conversation UI.
+
 The map-compatibility fix based on feb4984 refreshed **settings.jpg** and added
 **model-compatibility.jpg** and **vision-correction.jpg** on 2026-09-18, from the
 actual production page at port 8091 with a separate disarmed Copter runtime.
@@ -49,7 +70,7 @@ The user's saved settings were kept separate from this temporary installation.
    Respect any user instruction to keep another port stopped.
 2. Preserve the installation's model/prompt/cadence preferences. Use only
    app-owned simulators, bounded inference and non-private demo content.
-3. Launch two copters, create a representative local mission through the actual
+3. Launch the app-owned vehicles needed for the changed workflow. Use the actual
    UI/API and obtain a real model response if showing model-generated content.
 4. Capture the visible application viewport in a browser. Keep vehicle identity,
    units, telemetry freshness, controls and map attribution visible. Do not

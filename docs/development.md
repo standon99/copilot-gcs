@@ -14,7 +14,7 @@ From the repository root, with Node 22+ on PATH:
 git diff --check
 ```
 
-The current suite contains **157 Python tests** and **11 frontend workflow tests**. The [validation record](validation.md) covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
+The current suite contains **168 Python tests** and **17 frontend workflow tests**. The [validation record](validation.md) distinguishes checks run for each iteration and covers native Copter/Plane/Rover operations, real cloud inference, protocol readbacks, blind trial results and browser checks. Build success is not a substitute for flight or detection validation.
 
 For an isolated runtime during development, use
 `COPILOT_RUNTIME_DIR="$PWD/runtime/test-session" COPILOT_PORT=8091 ./start.sh`.

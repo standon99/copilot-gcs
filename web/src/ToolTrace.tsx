@@ -1,22 +1,16 @@
 import React from "react";
 
-export function ToolTrace({
-  steps,
-  running = false,
-  round,
-  maxRounds,
-  onCancel,
-}: any) {
-  if (!steps?.length && !running) return null;
+export function ToolTrace({ steps, running = false, round, maxRounds }: any) {
+  if (!steps?.length && !round && !running) return null;
   return (
-    <details className="tool-trace" open={running || undefined}>
-      <summary>
-        {running
-          ? round
-            ? `Working · model call ${round}/${maxRounds}`
-            : "Preparing turn…"
-          : `${steps.length} tool actions`}
-      </summary>
+    <details className="tool-trace">
+      <summary>{running ? "Activity details" : "Reply details"}</summary>
+      <p className="request-count">
+        {round
+          ? `${round} model request${round === 1 ? "" : "s"} used`
+          : "Preparing request"}
+        {maxRounds ? ` · ${maxRounds} maximum` : ""}
+      </p>
       {steps?.map((step: any) => (
         <details key={step.id} className={`tool-step ${step.status}`}>
           <summary>
@@ -31,7 +25,6 @@ export function ToolTrace({
           </pre>
         </details>
       ))}
-      {running && <button onClick={onCancel}>Cancel turn</button>}
     </details>
   );
 }

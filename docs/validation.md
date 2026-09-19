@@ -1,5 +1,46 @@
 # Validation record
 
+## Chat bubbles and waiting state — 2026-09-18
+
+Iteration based on 3fc210a. **17 frontend tests passed** and the production
+TypeScript/Vite build passed, retaining its bundle-size advisory. Six added tests
+exercise immediate pending messages, server acknowledgement without duplication,
+vehicle switching, completion/cancellation/failure, reload recovery and explicit
+multi-vehicle targets. No backend implementation changed; the Python suite was
+not rerun for this iteration. Frontend formatting, local documentation links,
+diff checks and credential scans passed.
+
+Chrome verification used port 8091 with a separate disarmed native Copter,
+automatic periodic/event inference off, and at most four calls per chat turn.
+Two actual `qwen3.5:397b` requests read vehicle state and returned formatted
+replies in **10.55 s** and **7.85 s**, each using two model calls and one
+`get_vehicle_state` action. Their reported token totals were **34,516** and
+**39,665**. A first cancellation attempt lost the race to the second completed
+reply; a third request was stopped after reloading the page, before its first
+model response. The waiting bubble survived reload and changed to Stopped.
+Five model requests were attempted in total; usage for the cancelled request is
+unavailable. No extra calls were made to manufacture screenshots.
+
+The browser showed right/left message bubbles, Markdown emphasis/lists, the
+waiting model/time/Stop control, collapsed activity details, expandable read-tool
+results and no persistent call counter in the conversation. The draft remained
+version zero with no waypoints, fences, watches or parameter proposals. No
+vehicle commands or writes were tested. Actual inspected screenshots are in the
+[capture notes](screenshots/README.md).
+
+README, usage, AI interface, implementation, development and screenshot docs
+were updated. Setup instructions and the broader design baseline were reviewed
+and remain accurate. `react-markdown` 10.1.0 is now pinned for reply rendering;
+raw HTML and remote model-written images are disabled. The new
+[spatial-planning review](spatial-planning.md) records recommendations prompted
+by the user's road-geofence example; those spatial additions are not shipped or
+validated by this iteration.
+
+The user's 8080 tab was refreshed without restarting its backend. Exact saved
+settings, both session IDs, drafts, chat histories and pending proposals were
+verified unchanged across the refresh. The isolated 8091 server and its owned
+test simulator were stopped afterward.
+
 ## Map-image model compatibility — 2026-09-18
 
 Iteration based on feb4984. The two reported map failures used **gpt-oss:120b**

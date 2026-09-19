@@ -22,6 +22,20 @@ inside the conversation. Plain functional labels replace the earlier step strip.
 symbol and model share a compact pill in the vehicle bar, without a separate
 full-width header.
 
+Chat uses right-aligned user bubbles and left-aligned replies. A local pending
+message appears immediately, reconciles with the server without duplication,
+and belongs only to the vehicles selected when sent. Running server state keeps
+the waiting bubble and Stop available after reload; completion, failure or
+cancellation removes it. Model-request counts and tool traces are collapsed
+behind Activity/Reply details. The UI follows new messages unless the reader has
+scrolled up. Replies arrive whole; there is no token streaming.
+
+Assistant text uses pinned `react-markdown` 10.1.0 for paragraphs, emphasis,
+lists and code. Raw HTML is skipped, no raw-HTML plugin is enabled, links use the
+renderer’s URL filtering and open with `noopener noreferrer`, and model-written
+images render as text rather than fetching external resources. This is separate
+from operator-attached map images. Error and user messages remain plain text.
+
 **Check draft / Recheck** runs numerical review without inference.
 **Ask AI to review** also appends a model assessment to chat. Upload remains an
 explicit reviewed action. Flight controls then offers separate control access,

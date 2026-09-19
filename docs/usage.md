@@ -52,10 +52,21 @@ Use **AI planning** in the main bar, check the target vehicles, and write in the
 > For copter ab12cd, add a waypoint at -35.3623, 149.16523 at 30 m above home, followed by unlimited loiter. Stage LOG_DISARMED=1 for that copter. Leave the other copter unchanged.
 
 Requested waypoint changes revise local drafts, with before/after inspection and undo. The model can read, edit, check the results and continue in one turn through the
-[documented tools](ai-interface.md). Expand **Tool actions** to inspect each call.
+[documented tools](ai-interface.md). Your messages appear on the right, replies
+on the left. A **Waiting for reply…** bubble shows animated dots, the model,
+elapsed time and **Stop** while a request is running. Replies arrive when the
+turn finishes; the dots do not represent streamed model output. Scroll up to
+read earlier messages without being pulled back to the bottom.
+
+Expand **Activity details** while waiting or **Reply details** afterward to
+inspect tool calls and request counts. A maximum of 12 calls means a usage
+limit, not 12 steps the model must complete; these counters stay out of the main
+conversation. Settings controls the limit.
 The application stages the complete turn before changing drafts. An unselected
 target, reboot, concurrent edit, failed request or exhausted/cancelled turn
-rejects staged changes. **Cancel turn** is available while it works.
+rejects staged changes. **Stop** requests cancellation, then a stopped message
+replaces the waiting bubble. Reloading the page retains an active reply's waiting
+indicator; switching vehicles shows that vehicle's conversation.
 
 Parameter requests create cards containing vehicle, exact parameter, old/new values and reason. **Enable vehicle controls → Apply to [ID]** writes to a disarmed owned simulator and verifies readback. Proposals expire after five minutes and are invalid after reboot or conflicting changes. A failed batch stops; earlier verified writes remain applied and are recorded in its results.
 
